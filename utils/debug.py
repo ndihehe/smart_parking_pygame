@@ -1,7 +1,6 @@
-def print_grid(grid: list[list[str]]) -> None:
-    pass
+DEBUG_MODE = False
 
 
-def describe_state(state) -> str:
-    pass
-
+def debug_print(message: str) -> None:
+    if DEBUG_MODE:
+        print(f"[DEBUG] {message}")

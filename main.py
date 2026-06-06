@@ -1,10 +1,9 @@
+import os
+
 from ui.pygame_app import PygameApp
 
 
-def main() -> None:
-    app = PygameApp()
-    app.run()
-
-
 if __name__ == "__main__":
-    main()
+    map_path = os.path.join("data", "maps", "default_map.txt")
+    app = PygameApp(map_path)
+    app.run()

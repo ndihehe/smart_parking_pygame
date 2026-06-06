@@ -1,23 +1,23 @@
 from enum import Enum
 
 
-class CellType(str, Enum):
+class CellType(Enum):
     GATE = "G"
     ROAD = "R"
     INTERSECTION = "I"
-    STATIC_OBSTACLE = "X"
-    DYNAMIC_BLOCK = "B"
-    MOTORBIKE_SLOT = "M"
+    OBSTACLE = "X"
+    BLOCKED = "B"
     CAR_SLOT = "C"
+    MOTO_SLOT = "M"
     EMPTY = "."
 
 
-class VehicleType(str, Enum):
+class VehicleType(Enum):
     CAR = "CAR"
     MOTORBIKE = "MOTORBIKE"
 
 
-class VehicleStatus(str, Enum):
+class VehicleStatus(Enum):
     WAITING = "WAITING"
     MOVING = "MOVING"
     PARKED = "PARKED"
@@ -25,3 +25,9 @@ class VehicleStatus(str, Enum):
     REROUTING = "REROUTING"
     VIOLATION = "VIOLATION"
 
+
+class AlgorithmType(Enum):
+    BFS = "BFS"
+    DFS = "DFS"
+    GREEDY = "GREEDY"
+    ASTAR = "ASTAR"

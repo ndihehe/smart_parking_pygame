@@ -1,17 +1,24 @@
 from datetime import datetime
 
+from config import LOG_MAX_LINES
+
 
 class Logger:
-    def __init__(self) -> None:
-        self.messages: list[str] = []
+    _logs: list[str] = []
 
-    def info(self, message: str) -> None:
-        self.messages.append(self.format_message("INFO", message))
-
-    def warning(self, message: str) -> None:
-        self.messages.append(self.format_message("WARNING", message))
-
-    def format_message(self, level: str, message: str) -> str:
+    @staticmethod
+    def log(message: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
-        return f"[{timestamp}] [{level}] {message}"
+        entry = f"[{timestamp}] {message}"
+        Logger._logs.append(entry)
+        if len(Logger._logs) > LOG_MAX_LINES:
+            Logger._logs.pop(0)
+        print(entry)
 
+    @staticmethod
+    def get_logs() -> list[str]:
+        return Logger._logs.copy()
+
+    @staticmethod
+    def clear() -> None:
+        Logger._logs.clear()

@@ -1,34 +1,33 @@
 import pygame
 
-from config import FPS, WINDOW_HEIGHT, WINDOW_WIDTH
+from config import FPS, WINDOW_TITLE
 from core.game_controller import GameController
 from ui.input_handler import InputHandler
 from ui.renderer import Renderer
+from ui.ui_layout import WINDOW_HEIGHT, WINDOW_WIDTH
 
 
 class PygameApp:
-    def __init__(self) -> None:
+    def __init__(self, map_filepath: str) -> None:
         pygame.init()
-        pygame.display.set_caption("Smart Parking Pygame")
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        pygame.display.set_caption(WINDOW_TITLE)
         self.clock = pygame.time.Clock()
-        self.game_controller = GameController()
+        self.gc = GameController(map_filepath)
         self.renderer = Renderer(self.screen)
-        self.input_handler = InputHandler()
+        self.input_handler = InputHandler(self.gc)
         self.running = True
 
     def run(self) -> None:
         while self.running:
             delta_time = self.clock.tick(FPS) / 1000.0
-            self.handle_events()
-            self.game_controller.update(delta_time)
-            self.renderer.draw(self.game_controller.state)
+            events = pygame.event.get()
+            self.running = self.input_handler.handle_events(events)
+            self.gc.update(delta_time)
+            self.screen.fill((0, 0, 0))
+            self.renderer.render(
+                self.gc.map_manager.get_state(),
+                self.gc.vehicle_manager.get_all_vehicles(),
+            )
+            pygame.display.flip()
         pygame.quit()
-
-    def handle_events(self) -> None:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            else:
-                self.input_handler.handle(event, self.game_controller)
-

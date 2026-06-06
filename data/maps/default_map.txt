@@ -1,6 +1,8 @@
-G R R R I R C C
-R X X R R R C C
-R R R R X R M M
-R C C I R R M M
-R R R R R X R R
-
+G R R R I R R R I R R G
+R X X R R R C C R X C C
+R R R R X R C C R R R R
+R M M I R R R R I M M R
+R M M R R X C C R R R R
+R R R R I R C C R X X R
+C C R X R R R R R R R R
+G R R R R X M M R I R G

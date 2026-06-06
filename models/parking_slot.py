@@ -1,12 +1,11 @@
 from dataclasses import dataclass
 
+from models.enums import VehicleType
+
 
 @dataclass
 class ParkingSlot:
     position: tuple[int, int]
-    slot_type: str
-    vehicle_id: int | None = None
-
-    def is_available(self) -> bool:
-        return self.vehicle_id is None
-
+    slot_type: VehicleType
+    is_occupied: bool = False
+    occupied_by: int | None = None

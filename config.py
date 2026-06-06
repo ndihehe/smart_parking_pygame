@@ -1,7 +1,29 @@
-WINDOW_WIDTH = 1024
-WINDOW_HEIGHT = 768
-FPS = 60
-CELL_SIZE = 40
+# --- Map ---
+CELL_SIZE = 64          # pixel size of each grid cell
+MAP_ROWS = 8
+MAP_COLS = 12
 
-DEFAULT_MAP_PATH = "data/maps/default_map.txt"
+# --- Simulation ---
+FPS = 30
+VEHICLE_MOVE_INTERVAL = 0.3   # seconds between each step a vehicle moves
+AUTO_SPAWN_INTERVAL = 5.0     # seconds between auto-spawned vehicles
 
+# --- Traffic ---
+WAIT_THRESHOLD = 5.0              # seconds before a vehicle is considered stuck
+MIN_WAITING_VEHICLES = 3          # vehicles near intersection to trigger congestion
+INTERSECTION_CONGESTION_TIME = 10.0  # seconds total wait at intersection to trigger reroute
+REROUTE_WAIT_THRESHOLD = 10.0     # seconds before forcing reroute
+
+# --- Scoring ---
+CONGESTION_PENALTY = 5.0
+OBSTACLE_PENALTY = 3.0
+
+# --- Priority ---
+WAIT_TIME_WEIGHT = 10
+DIRECTION_BONUS_STRAIGHT = 5
+DIRECTION_BONUS_TURN = 0
+
+# --- UI ---
+WINDOW_TITLE = "Smart Parking Simulation"
+LOG_MAX_LINES = 20
+SIDEBAR_WIDTH = 320

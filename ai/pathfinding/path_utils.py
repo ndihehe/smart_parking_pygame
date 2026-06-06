@@ -1,11 +1,17 @@
-def get_neighbors(cell: tuple[int, int], grid: list[list[str]]) -> list[tuple[int, int]]:
-    pass
+def reconstruct_path(
+    came_from: dict[tuple[int, int], tuple[int, int]],
+    start: tuple[int, int],
+    goal: tuple[int, int],
+) -> list[tuple[int, int]]:
+    if goal not in came_from and goal != start:
+        return []
 
+    path: list[tuple[int, int]] = []
+    current = goal
 
-def reconstruct_path(came_from: dict, current: tuple[int, int]) -> list[tuple[int, int]]:
-    pass
+    while current != start:
+        path.append(current)
+        current = came_from[current]
 
-
-def is_valid_cell(cell: tuple[int, int], grid: list[list[str]]) -> bool:
-    pass
-
+    path.reverse()
+    return path
