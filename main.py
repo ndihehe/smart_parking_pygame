@@ -1,4 +1,4 @@
-from src.smart_parking.ui.app import PygameApp
+from ui.pygame_app import PygameApp
 
 
 def main() -> None:
@@ -8,4 +8,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

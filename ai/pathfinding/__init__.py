@@ -1,0 +1,2 @@
+"""Pathfinding algorithm skeletons."""
+

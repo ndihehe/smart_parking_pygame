@@ -1,2 +1,0 @@
-"""Smart parking simulator package."""
-
