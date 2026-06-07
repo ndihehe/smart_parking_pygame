@@ -17,11 +17,20 @@ class PygameApp:
         self.renderer = Renderer(self.screen)
         self.input_handler = InputHandler(self.gc)
         self.running = True
+        self.fullscreen = False
 
     def run(self) -> None:
         while self.running:
             delta_time = self.clock.tick(FPS) / 1000.0
             events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                    self.fullscreen = not self.fullscreen
+                    if self.fullscreen:
+                        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                    else:
+                        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+                    self.renderer.screen = self.screen
             self.running = self.input_handler.handle_events(events)
             self.gc.update(delta_time)
             self.screen.fill((0, 0, 0))

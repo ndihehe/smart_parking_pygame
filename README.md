@@ -24,7 +24,7 @@ Dự án mô phỏng hệ thống bãi đỗ xe thông minh bằng Python + Pyga
 - Có traffic controller rule-based ở mức cơ bản.
 - Có renderer Pygame vẽ grid, xe, path, sidebar, stats và logs.
 
-UI hiện tại ở mức demo/basic test, chưa phải giao diện game hoàn thiện.
+UI hiện tại ở mức demo/basic test, đã giảm kích thước ô để dễ quan sát map rộng hơn và có fullscreen bằng `F11`.
 
 ## Cấu trúc thư mục
 
@@ -76,7 +76,8 @@ hãy đảm bảo `python` trỏ tới interpreter đã cài `pygame`.
 - Click chuột trái vào xe: chọn xe và chuyển sang manual mode.
 - `W/A/S/D` hoặc phím mũi tên: di chuyển xe manual.
 - `ENTER`: xác nhận đỗ xe đã chọn.
-- `ESC`: bỏ chọn xe.
+- ESC: bỏ chọn xe.
+- F11: bật/tắt fullscreen.
 
 ## Kiểm tra nhanh
 
@@ -92,5 +93,7 @@ py -3.13 main.py
 - Traffic/congestion logic mới ở mức rule-based cơ bản.
 - Collision/occupancy đã được chặn ở mức cơ bản; vẫn cần test thêm cho nhiều xe và ùn tắc phức tạp.
 - Test trong `tests/` vẫn cần được phát triển thêm.
+
+
 
 

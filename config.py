@@ -1,5 +1,5 @@
 # --- Map ---
-CELL_SIZE = 64          # pixel size of each grid cell
+CELL_SIZE = 48          # pixel size of each grid cell
 MAP_ROWS = 12
 MAP_COLS = 18
 

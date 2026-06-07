@@ -567,3 +567,14 @@ Các thay đổi đã thực hiện:
 - đặt một xe khác ở ô kế tiếp và chuyển sang manual;
 - update simulation;
 - xe đang đi không xuyên qua xe manual mà bị block/reroute.
+
+## 22. Cập nhật hiển thị dễ nhìn hơn và fullscreen
+
+Người dùng yêu cầu giảm kích thước ô để map rộng dễ quan sát hơn và cho phép fullscreen.
+
+Các thay đổi đã thực hiện:
+
+- `config.py`: giảm `CELL_SIZE` từ `64` xuống `48`, giúp map 12x18 hiển thị gọn hơn trong cửa sổ.
+- `ui/pygame_app.py`: thêm trạng thái fullscreen và phím `F11` để bật/tắt fullscreen.
+- Khi chuyển fullscreen/windowed, `Renderer` được cập nhật lại `screen` hiện tại để tiếp tục render đúng surface.
+- `README.md`: cập nhật điều khiển `F11` và mô tả trạng thái UI mới.
