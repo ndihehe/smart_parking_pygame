@@ -4,7 +4,7 @@ Dự án mô phỏng hệ thống bãi đỗ xe thông minh bằng Python + Pyga
 
 ## Mục tiêu
 
-- Mô phỏng bãi đỗ xe dạng grid 8x12.
+- Mô phỏng bãi đỗ xe dạng grid 12x18.
 - Tạo xe ô tô và xe máy từ cổng vào.
 - Tìm ô đỗ phù hợp theo loại xe.
 - Tìm đường bằng các thuật toán tìm kiếm cơ bản.
@@ -15,11 +15,11 @@ Dự án mô phỏng hệ thống bãi đỗ xe thông minh bằng Python + Pyga
 
 Đã có bản chạy demo cơ bản:
 
-- Load map từ `data/maps/default_map.txt`.
+- Load map 12x18 từ `data/maps/default_map.txt`.
 - Parse các cell type: gate, road, intersection, obstacle, car slot, motorbike slot.
 - Spawn xe bằng phím `C` và `M`.
 - Assign slot theo scoring đơn giản.
-- Tìm đường bằng A* và cho xe di chuyển từng cell.
+- Tìm đường bằng A* và cho xe di chuyển từng cell, không đi xuyên qua ô đang có xe khác.
 - Có BFS, DFS, Greedy, A* trong `ai/pathfinding/`.
 - Có traffic controller rule-based ở mức cơ bản.
 - Có renderer Pygame vẽ grid, xe, path, sidebar, stats và logs.
@@ -90,5 +90,7 @@ py -3.13 main.py
 - Chưa có đồ họa sprite/tilemap nâng cao.
 - Chưa có animation mượt, xe đang nhảy theo cell.
 - Traffic/congestion logic mới ở mức rule-based cơ bản.
-- Collision/occupancy giữa nhiều xe chưa được siết đầy đủ.
+- Collision/occupancy đã được chặn ở mức cơ bản; vẫn cần test thêm cho nhiều xe và ùn tắc phức tạp.
 - Test trong `tests/` vẫn cần được phát triển thêm.
+
+

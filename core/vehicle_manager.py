@@ -59,16 +59,29 @@ class VehicleManager:
 
         if self._move_timer >= VEHICLE_MOVE_INTERVAL:
             self._move_timer = 0.0
+            occupied_positions = {
+                vehicle.position
+                for vehicle in self.vehicles.values()
+            }
             for vehicle in self.vehicles.values():
                 if vehicle.status == VehicleStatus.MOVING and len(vehicle.path) > 0:
                     next_cell = vehicle.path[0]
+                    occupied_positions.discard(vehicle.position)
+                    slot = map_state.parking_slots.get(next_cell)
                     passable = (
                         next_cell not in map_state.dynamic_blocks
                         and next_cell not in map_state.static_obstacles
+                        and next_cell not in occupied_positions
+                        and (
+                            slot is None
+                            or not slot.is_occupied
+                            or slot.occupied_by == vehicle.id
+                        )
                     )
 
                     if passable:
                         vehicle.position = next_cell
+                        occupied_positions.add(vehicle.position)
                         vehicle.path.pop(0)
                         if not vehicle.path:
                             vehicle.status = VehicleStatus.PARKED
@@ -82,6 +95,7 @@ class VehicleManager:
                             f"[VehicleManager] Vehicle #{vehicle.id} blocked at "
                             f"{next_cell}, set to REROUTING"
                         )
+                    occupied_positions.add(vehicle.position)
 
         for vehicle in self.vehicles.values():
             if vehicle.status in (VehicleStatus.WAITING, VehicleStatus.REROUTING):

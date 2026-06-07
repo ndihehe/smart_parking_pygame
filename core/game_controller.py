@@ -50,7 +50,25 @@ class GameController:
             Logger.log("[GameController] No gate available")
             return None
 
+        occupied_positions = {
+            vehicle.position
+            for vehicle in self.vehicle_manager.get_all_vehicles()
+        }
         gate_position = gate_cells[gate_index]
+        if gate_position in occupied_positions:
+            available_gate = next(
+                (
+                    gate_cell
+                    for gate_cell in gate_cells
+                    if gate_cell not in occupied_positions
+                ),
+                None,
+            )
+            if available_gate is None:
+                Logger.log("[GameController] No gate available")
+                return None
+            gate_position = available_gate
+
         vehicle = self.vehicle_manager.spawn_vehicle(vehicle_type, gate_position)
         self._assign_and_path(vehicle)
         return vehicle
@@ -95,7 +113,22 @@ class GameController:
             vehicle.position[0] + direction[0],
             vehicle.position[1] + direction[1],
         )
-        if self.map_manager.is_passable(new_position):
+        occupied_positions = {
+            other_vehicle.position
+            for other_vehicle in self.vehicle_manager.get_all_vehicles()
+            if other_vehicle.id != vehicle.id
+        }
+        slot = self.map_manager.get_state().parking_slots.get(new_position)
+        slot_available = (
+            slot is None
+            or not slot.is_occupied
+            or slot.occupied_by == vehicle.id
+        )
+        if (
+            self.map_manager.is_passable(new_position)
+            and new_position not in occupied_positions
+            and slot_available
+        ):
             vehicle.position = new_position
         else:
             Logger.log(

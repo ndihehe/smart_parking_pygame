@@ -544,3 +544,26 @@ Nếu muốn nâng đồ họa 2D:
 - render xe bằng sprite top-down
 - thêm selection outline, warning pulse, path effect
 - giữ toàn bộ logic grid trong core, không đưa thuật toán vào UI
+
+## 21. Cập nhật chống xe đi xuyên và mở rộng map
+
+Người dùng phát hiện hai vấn đề khi chạy demo:
+
+- Xe đã vào ô đậu nhưng xe khác vẫn có thể chạy xuyên qua ô đó.
+- Khi click chọn một xe để điều khiển manual trên đường, xe khác vẫn có thể chạy xuyên qua xe đang được chọn nếu xe đó chưa xác nhận đỗ bằng `ENTER`.
+- Bãi đỗ 8x12 quá nhỏ để mô phỏng.
+
+Các thay đổi đã thực hiện:
+
+- `core/vehicle_manager.py`: khi xe `MOVING` chuẩn bị bước sang ô kế tiếp, hệ thống kiểm tra thêm các ô đang bị xe khác chiếm. Nếu ô kế tiếp có xe khác hoặc là slot đã bị xe khác giữ, xe không được đi xuyên qua.
+- `core/game_controller.py`: manual movement cũng kiểm tra ô đang có xe khác hoặc slot bị xe khác giữ. Nếu không hợp lệ, xe không di chuyển và ghi log.
+- `core/game_controller.py`: spawn xe không còn đè lên gate đang có xe. Nếu gate được chọn đang bị chiếm, hệ thống tìm gate trống khác; nếu không còn gate trống thì log `No gate available`.
+- `config.py`: mở rộng map từ 8x12 lên 12x18.
+- `data/maps/default_map.txt`: thay bằng map 12 dòng x 18 cột, có nhiều road, intersection, car slot và motorbike slot hơn.
+
+Đã smoke test:
+
+- tạo một xe đang đi;
+- đặt một xe khác ở ô kế tiếp và chuyển sang manual;
+- update simulation;
+- xe đang đi không xuyên qua xe manual mà bị block/reroute.
