@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from models.enums import VehicleStatus, VehicleType
+from models.enums import VehicleStatus, VehicleType, WaitReason
 
 
 @dataclass
@@ -14,3 +14,4 @@ class Vehicle:
     wait_time: float = 0.0
     priority_score: float = 0.0
     direction: str = "STRAIGHT"
+    wait_reason: WaitReason = WaitReason.NONE

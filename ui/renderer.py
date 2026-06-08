@@ -1,22 +1,19 @@
+from pathlib import Path
+
 import pygame
 
-from config import CELL_SIZE, LOG_MAX_LINES, SIDEBAR_WIDTH
-from models.enums import CellType, VehicleStatus
+from config import CELL_SIZE
+from core.simulation_state import SimulationStatus, VehiclePlan
+from models.enums import VehicleStatus, VehicleType
+from models.guard import Guard
 from models.map_state import MapState
 from models.vehicle import Vehicle
 from ui.colors import (
     BLOCKED,
-    CAR_SLOT,
-    EMPTY,
-    GATE,
     GRID_LINE,
-    INTERSECTION,
-    MOTO_SLOT,
-    OBSTACLE,
     PATH_COLOR,
-    ROAD,
-    SIDEBAR_BG,
     TEXT_COLOR,
+    WHITE,
     VEHICLE_MANUAL,
     VEHICLE_MOVING,
     VEHICLE_PARKED,
@@ -24,51 +21,115 @@ from ui.colors import (
     VEHICLE_VIOLATION,
     VEHICLE_WAITING,
 )
-from ui.ui_layout import (
-    LOG_AREA_HEIGHT,
-    LOG_AREA_WIDTH,
-    LOG_AREA_X,
-    LOG_AREA_Y,
-    SIDEBAR_X,
-    WINDOW_HEIGHT,
-)
-from utils.grid_utils import cell_to_pixel
+from ui.hud_overlay import draw_hud
+from ui.map_tile_renderer import MapTileRenderer
+from ui.sprite_loader import SpriteLoader
+from ui.view_transform import get_game_viewport_rect, get_map_view_rect, map_pixel_size
 from utils.logger import Logger
 
 
 class Renderer:
     def __init__(self, screen: pygame.Surface) -> None:
         self.screen = screen
-        self.font = pygame.font.SysFont("monospace", 13)
+        self.font = pygame.font.SysFont("monospace", 12)
+        self.font_small = pygame.font.SysFont("monospace", 9)
         self.font_bold = pygame.font.SysFont("monospace", 14, bold=True)
+        self._map_surface: pygame.Surface | None = None
+        self._map_cache_key: tuple[int, int, int] | None = None
+        self._background_surface: pygame.Surface | None = None
+        self._background_path: str | None = None
+        self._sprites = SpriteLoader().load_entity_sprites()
+        self._map_tile_renderer = MapTileRenderer(self.font_small, self._sprites)
+        self._world_surface: pygame.Surface | None = None
 
     def draw_map(self, map_state: MapState) -> None:
-        cell_colors = {
-            CellType.ROAD: ROAD,
-            CellType.GATE: GATE,
-            CellType.INTERSECTION: INTERSECTION,
-            CellType.CAR_SLOT: CAR_SLOT,
-            CellType.MOTO_SLOT: MOTO_SLOT,
-            CellType.OBSTACLE: OBSTACLE,
-            CellType.BLOCKED: BLOCKED,
-            CellType.EMPTY: EMPTY,
-        }
+        self._ensure_map_surface(map_state)
+        if self._map_surface is not None:
+            self.screen.blit(self._map_surface, (0, 0))
+
+        for position in map_state.dynamic_blocks:
+            x, y = self._cell_to_pixel(map_state, position)
+            rect = pygame.Rect(x, y, map_state.tile_size, map_state.tile_size)
+            pygame.draw.rect(self.screen, BLOCKED, rect)
+            pygame.draw.rect(self.screen, GRID_LINE, rect, 1)
+            text = self.font_small.render("B!", True, TEXT_COLOR)
+            text_rect = text.get_rect(center=rect.center)
+            self.screen.blit(text, text_rect)
+
+    def _ensure_map_surface(self, map_state: MapState) -> None:
+        cache_key = (id(map_state.grid), map_state.rows, map_state.cols)
+        if self._map_surface is not None and self._map_cache_key == cache_key:
+            return
+
+        width = map_state.cols * map_state.tile_size
+        height = map_state.rows * map_state.tile_size
+        self._map_surface = pygame.Surface((width, height))
+        self._map_cache_key = cache_key
+
+        if map_state.image_path:
+            background = self._load_background(map_state)
+            self._map_surface.blit(background, (0, 0))
+            return
 
         for row_index, row in enumerate(map_state.grid):
             for col_index, cell_type in enumerate(row):
                 position = (row_index, col_index)
-                color = cell_colors[cell_type]
-                if position in map_state.dynamic_blocks:
-                    color = BLOCKED
+                x, y = self._cell_to_pixel(map_state, position)
+                rect = pygame.Rect(x, y, map_state.tile_size, map_state.tile_size)
+                self._map_tile_renderer.draw_tile(
+                    self._map_surface,
+                    rect,
+                    cell_type,
+                    position,
+                )
 
-                x, y = cell_to_pixel(position)
-                rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
-                pygame.draw.rect(self.screen, color, rect)
-                pygame.draw.rect(self.screen, GRID_LINE, rect, 1)
+    def _load_background(self, map_state: MapState) -> pygame.Surface:
+        assert map_state.image_path is not None
+        if (
+            self._background_surface is not None
+            and self._background_path == map_state.image_path
+        ):
+            return self._background_surface
 
-    def draw_vehicles(self, vehicles: list[Vehicle]) -> None:
+        image_path = Path(map_state.image_path)
+        if not image_path.is_absolute():
+            image_path = Path.cwd() / image_path
+        background = pygame.image.load(str(image_path)).convert()
+        expected_size = (map_state.cols * map_state.tile_size, map_state.rows * map_state.tile_size)
+        if background.get_size() != expected_size:
+            background = pygame.transform.smoothscale(background, expected_size)
+        self._background_surface = background
+        self._background_path = map_state.image_path
+        return background
+
+    def _cell_to_pixel(
+        self,
+        map_state: MapState,
+        position: tuple[int, int],
+    ) -> tuple[int, int]:
+        row, col = position
+        return (
+            map_state.grid_offset_x + col * map_state.tile_size,
+            map_state.grid_offset_y + row * map_state.tile_size,
+        )
+
+    def _cell_center(
+        self,
+        map_state: MapState,
+        position: tuple[int, int],
+    ) -> tuple[int, int]:
+        x, y = self._cell_to_pixel(map_state, position)
+        return x + map_state.tile_size // 2, y + map_state.tile_size // 2
+
+    def draw_vehicles(
+        self,
+        map_state: MapState,
+        vehicles: list[Vehicle],
+        selected_vehicle_id: int | None = None,
+    ) -> None:
         status_colors = {
             VehicleStatus.MOVING: VEHICLE_MOVING,
+            VehicleStatus.ARRIVED: VEHICLE_PARKED,
             VehicleStatus.PARKED: VEHICLE_PARKED,
             VehicleStatus.WAITING: VEHICLE_WAITING,
             VehicleStatus.MANUAL: VEHICLE_MANUAL,
@@ -77,68 +138,223 @@ class Renderer:
         }
 
         for vehicle in vehicles:
-            x, y = cell_to_pixel(vehicle.position)
-            center = (x + CELL_SIZE // 2, y + CELL_SIZE // 2)
-            radius = CELL_SIZE // 2 - 4
-            pygame.draw.circle(self.screen, status_colors[vehicle.status], center, radius)
+            x, y = self._cell_to_pixel(map_state, vehicle.position)
+            center = self._cell_center(map_state, vehicle.position)
+            radius = map_state.tile_size // 2 - 5
+            color = status_colors[vehicle.status]
+            sprite_key = self._get_vehicle_sprite_key(vehicle)
+            sprite = self._sprites.get(sprite_key)
+            if sprite is not None:
+                oriented_sprite = self._orient_vehicle_sprite(sprite, vehicle)
+                sprite_rect = oriented_sprite.get_rect(center=center)
+                self.screen.blit(oriented_sprite, sprite_rect)
+                label_text = f"C{vehicle.id}" if vehicle.type.value == "CAR" else f"M{vehicle.id}"
+            elif vehicle.type.value == "CAR":
+                rect = pygame.Rect(0, 0, map_state.tile_size - 8, map_state.tile_size - 12)
+                rect.center = center
+                pygame.draw.rect(self.screen, color, rect, border_radius=4)
+                pygame.draw.rect(self.screen, WHITE, rect, 2)
+                label_text = f"C{vehicle.id}"
+            else:
+                pygame.draw.circle(self.screen, color, center, radius)
+                pygame.draw.circle(self.screen, WHITE, center, radius, 2)
+                label_text = f"M{vehicle.id}"
 
-            label = self.font_bold.render(str(vehicle.id), True, TEXT_COLOR)
-            label_rect = label.get_rect(center=center)
+            if vehicle.id == selected_vehicle_id:
+                selected_rect = pygame.Rect(x + 2, y + 2, map_state.tile_size - 4, map_state.tile_size - 4)
+                pygame.draw.rect(self.screen, WHITE, selected_rect, 3)
+
+            pygame.draw.circle(self.screen, color, (x + map_state.tile_size - 7, y + 7), 4)
+            label = self.font_bold.render(label_text, True, TEXT_COLOR)
+            label_rect = label.get_rect(center=(center[0], y + map_state.tile_size - 7))
             self.screen.blit(label, label_rect)
 
-    def draw_paths(self, vehicles: list[Vehicle]) -> None:
+    def _get_vehicle_sprite_key(self, vehicle: Vehicle) -> str:
+        if vehicle.type.value == "CAR":
+            options = ["car", "car_alt"]
+        else:
+            options = ["motorbike", "motorbike_alt"]
+        return options[vehicle.id % len(options)]
+
+    def _orient_vehicle_sprite(
+        self,
+        sprite: pygame.Surface,
+        vehicle: Vehicle,
+    ) -> pygame.Surface:
+        if not vehicle.path:
+            return sprite
+
+        next_cell = vehicle.path[0]
+        row_delta = next_cell[0] - vehicle.position[0]
+        col_delta = next_cell[1] - vehicle.position[1]
+        if col_delta < 0:
+            return pygame.transform.flip(sprite, True, False)
+        if row_delta < 0:
+            return pygame.transform.rotate(sprite, 90)
+        if row_delta > 0:
+            return pygame.transform.rotate(sprite, -90)
+        return sprite
+
+    def draw_paths(self, map_state: MapState, vehicles: list[Vehicle]) -> None:
         for vehicle in vehicles:
             if vehicle.status in (VehicleStatus.MOVING, VehicleStatus.REROUTING) and vehicle.path:
                 for position in vehicle.path:
-                    x, y = cell_to_pixel(position)
-                    center = (x + CELL_SIZE // 2, y + CELL_SIZE // 2)
+                    center = self._cell_center(map_state, position)
                     pygame.draw.circle(self.screen, PATH_COLOR, center, 4)
 
-    def draw_sidebar(self) -> None:
-        rect = pygame.Rect(SIDEBAR_X, 0, SIDEBAR_WIDTH, WINDOW_HEIGHT)
-        pygame.draw.rect(self.screen, SIDEBAR_BG, rect)
-        title = self.font_bold.render("SMART PARKING", True, TEXT_COLOR)
-        self.screen.blit(title, (SIDEBAR_X + 10, 20))
+    def draw_guards(self, map_state: MapState, guards: list[Guard] | None) -> None:
+        if not guards:
+            return
+        for guard in guards:
+            x, y = self._cell_to_pixel(map_state, guard.position)
+            center = self._cell_center(map_state, guard.position)
+            sprite = self._get_guard_sprite(guard)
+            if sprite is not None:
+                sprite_rect = sprite.get_rect(center=center)
+                self.screen.blit(sprite, sprite_rect)
+            else:
+                rect = pygame.Rect(x + 4, y + 4, map_state.tile_size - 8, map_state.tile_size - 8)
+                pygame.draw.rect(self.screen, WHITE, rect, border_radius=3)
+                pygame.draw.rect(self.screen, GRID_LINE, rect, 2)
+            label = self.font_small.render(f"S{guard.id}", True, GRID_LINE)
+            self.screen.blit(label, label.get_rect(center=(center[0], y + map_state.tile_size - 5)))
 
-    def draw_logs(self) -> None:
-        logs = Logger.get_logs()[-LOG_MAX_LINES:]
-        max_lines = LOG_AREA_HEIGHT // 16
-        logs = logs[-max_lines:]
-        start_y = LOG_AREA_Y + LOG_AREA_HEIGHT - len(logs) * 16
+    def _get_guard_sprite(self, guard: Guard) -> pygame.Surface | None:
+        if guard.task == "TRAFFIC":
+            sprite = self._sprites.get("guard_point")
+        elif guard.path:
+            frames = [
+                self._sprites.get("guard"),
+                self._sprites.get("guard_walk"),
+                self._sprites.get("guard_walk2"),
+                self._sprites.get("guard_walk"),
+            ]
+            frames = [frame for frame in frames if frame is not None]
+            if not frames:
+                return None
+            frame_index = (pygame.time.get_ticks() // 180 + guard.id) % len(frames)
+            sprite = frames[frame_index]
+        else:
+            sprite = self._sprites.get("guard")
 
-        clip_rect = pygame.Rect(
-            LOG_AREA_X,
-            LOG_AREA_Y,
-            LOG_AREA_WIDTH,
-            LOG_AREA_HEIGHT,
-        )
-        previous_clip = self.screen.get_clip()
-        self.screen.set_clip(clip_rect)
-        for index, log_line in enumerate(logs):
-            text = self.font.render(log_line, True, TEXT_COLOR)
-            self.screen.blit(text, (LOG_AREA_X, start_y + index * 16))
-        self.screen.set_clip(previous_clip)
+        if sprite is None:
+            return None
+        return self._orient_guard_sprite(sprite, guard)
 
-    def draw_stats(self, vehicles: list[Vehicle]) -> None:
-        moving = sum(1 for vehicle in vehicles if vehicle.status == VehicleStatus.MOVING)
-        parked = sum(1 for vehicle in vehicles if vehicle.status == VehicleStatus.PARKED)
-        waiting = sum(1 for vehicle in vehicles if vehicle.status == VehicleStatus.WAITING)
-        violation = sum(1 for vehicle in vehicles if vehicle.status == VehicleStatus.VIOLATION)
+    def _orient_guard_sprite(
+        self,
+        sprite: pygame.Surface,
+        guard: Guard,
+    ) -> pygame.Surface:
+        if not guard.path:
+            return sprite
 
+        next_cell = guard.path[0]
+        row_delta = next_cell[0] - guard.position[0]
+        col_delta = next_cell[1] - guard.position[1]
+        if col_delta < 0:
+            return pygame.transform.flip(sprite, True, False)
+        if row_delta < 0:
+            return pygame.transform.rotate(sprite, 90)
+        if row_delta > 0:
+            return pygame.transform.rotate(sprite, -90)
+        return sprite
+
+    def draw_selected_vehicle(
+        self,
+        map_state: MapState,
+        vehicles: list[Vehicle],
+        selected_vehicle_id: int | None,
+        guards: list[Guard] | None = None,
+    ) -> None:
+        if selected_vehicle_id is None:
+            return
+        vehicle = next((item for item in vehicles if item.id == selected_vehicle_id), None)
+        if vehicle is None:
+            return
+
+        wait_reason = vehicle.wait_reason.value if vehicle.wait_reason else "NONE"
         lines = [
-            f"Moving: {moving}",
-            f"Parked: {parked}",
-            f"Waiting: {waiting}",
-            f"Violation: {violation}",
+            "SELECTED",
+            f"id: {vehicle.id}",
+            f"type: {vehicle.type.value}",
+            f"status: {vehicle.status.value}",
+            f"reason: {wait_reason}",
+            f"pos: {vehicle.position}",
+            f"slot: {vehicle.assigned_slot}",
+            f"path: {len(vehicle.path)}",
         ]
         for index, line in enumerate(lines):
             text = self.font.render(line, True, TEXT_COLOR)
-            self.screen.blit(text, (SIDEBAR_X + 10, 60 + index * 18))
+            self.screen.blit(text, (10, 10 + index * 16))
 
-    def render(self, map_state: MapState, vehicles: list[Vehicle]) -> None:
+        if vehicle.assigned_slot is not None:
+            x, y = self._cell_to_pixel(map_state, vehicle.assigned_slot)
+            rect = pygame.Rect(x + 3, y + 3, map_state.tile_size - 6, map_state.tile_size - 6)
+            pygame.draw.rect(self.screen, WHITE, rect, 3)
+
+        if guards:
+            guard_lines = [
+                "GUARDS",
+                f"count: {len(guards)}",
+            ]
+            for guard in guards[:4]:
+                guard_lines.append(
+                    f"#{guard.id} {guard.task} pos={guard.position} target={guard.target_vehicle_id}"
+                )
+            for index, line in enumerate(guard_lines):
+                text = self.font.render(line, True, TEXT_COLOR)
+                self.screen.blit(text, (10, 150 + index * 16))
+
+    def _current_map_width(self) -> int:
+        if self._map_surface is not None:
+            return self._map_surface.get_width()
+        return 0
+
+    def render(
+        self,
+        map_state: MapState,
+        vehicles: list[Vehicle],
+        selected_vehicle_id: int | None = None,
+        guards: list[Guard] | None = None,
+        current_algorithm: str | None = None,
+        simulation_status: SimulationStatus = SimulationStatus.IDLE,
+        placement_vehicle_type: VehicleType = VehicleType.CAR,
+        placement_plan: VehiclePlan = VehiclePlan.ENTERING,
+        active_scenario: str | None = None,
+        simulation_speed: float = 1.0,
+        step_mode_enabled: bool = False,
+    ) -> None:
+        world_size = map_pixel_size(map_state)
+        if self._world_surface is None or self._world_surface.get_size() != world_size:
+            self._world_surface = pygame.Surface(world_size)
+
+        target_screen = self.screen
+        self.screen = self._world_surface
+        self.screen.fill((0, 0, 0))
         self.draw_map(map_state)
-        self.draw_paths(vehicles)
-        self.draw_vehicles(vehicles)
-        self.draw_sidebar()
-        self.draw_stats(vehicles)
-        self.draw_logs()
+        self.draw_paths(map_state, vehicles)
+        self.draw_vehicles(map_state, vehicles, selected_vehicle_id)
+        self.draw_guards(map_state, guards)
+        self.screen = target_screen
+
+        target_screen.fill((5, 7, 11))
+        viewport_rect = get_game_viewport_rect(target_screen.get_size(), map_state)
+        pygame.draw.rect(target_screen, (6, 8, 13), viewport_rect)
+        view_rect = get_map_view_rect(map_state, target_screen.get_size())
+        scaled_world = pygame.transform.smoothscale(self._world_surface, view_rect.size)
+        target_screen.blit(scaled_world, view_rect)
+        draw_hud(
+            target_screen,
+            self.font_bold,
+            self.font,
+            current_algorithm,
+            vehicles,
+            map_state,
+            simulation_status,
+            placement_vehicle_type,
+            placement_plan,
+            active_scenario,
+            simulation_speed,
+            step_mode_enabled,
+        )

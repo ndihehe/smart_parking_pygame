@@ -10,9 +10,11 @@ def astar(
     start: tuple[int, int],
     goal: tuple[int, int],
     map_manager: MapManager,
+    blocked_positions: set[tuple[int, int]] | None = None,
 ) -> list[tuple[int, int]]:
     if start == goal:
         return []
+    blocked_positions = blocked_positions or set()
 
     frontier: list[tuple[int, tuple[int, int]]] = []
     heapq.heappush(frontier, (manhattan(start, goal), start))
@@ -30,7 +32,16 @@ def astar(
             map_manager.state.rows,
             map_manager.state.cols,
         ):
-            if not map_manager.is_passable(neighbor):
+            if neighbor != goal and not map_manager.is_passable(neighbor):
+                continue
+            if neighbor in blocked_positions and neighbor not in (start, goal):
+                continue
+            slot = map_manager.state.parking_slots.get(neighbor)
+            if (
+                slot is not None
+                and neighbor != goal
+                and (slot.is_reserved or slot.is_occupied)
+            ):
                 continue
 
             new_cost = cost_so_far[current] + 1

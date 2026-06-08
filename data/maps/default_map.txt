@@ -1,12 +1,20 @@
-G R R R I R R R R I R R R R I R R G
-R X X R R R C C R R R C C R X R M M
-R R R R X R C C R X R C C R R R M M
-R C C I R R R R I R R R R I C C R R
-R C C R R X M M R R X M M R C C R R
-R R R R I R M M R I R M M R R R R R
-R X R C C R R R R R R R C C R X X R
-R R R C C R X X R I R R C C R R R R
-M M R R R R R R R R R R R R R R C C
-M M R X X R I R C C R I R X X R C C
-R R R R R R R R C C R R R R R R R R
-G R R I R R X R R R R X R R I R R G
+G R R R I R R R R I R R R R I R R R R I R R R R I R R R R I R G
+R X X R R R R R R R R R R R R R R R R R R R R R R R R R R X X R
+R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
+R R X R R R R R R R R R R R R R R R R R R R R R R R R R R X R R
+R R R R R R C C C C C C C C C C C C C C C C C C C C R R R R R R
+R R R R R R C C C C C C C C C C C C C C C C C C C C R R R R R R
+R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
+R X R R R R R X X R R R R R R R R R R R R X X R R R R R R R X R
+R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R
+R R R I R R R R X R R I R R R R X R R I R R R R X R R I R R R R
+R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R
+R X X R R R R R R R R R R R R R R R R R R R R R R R R R R X X R
+R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
+R R X R R R R R R R R R R R R R R R R R R R R R R R R R R X R R
+R R R R R R M M M M M M M M M M M M M M M M M M M M R R R R R R
+R R R R R R M M M M M M M M M M M M M M M M M M M M R R R R R R
+R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
+R X R R R R R X X R R R R R R R R R R R R X X R R R R R R R X R
+R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
+G R R I R R X R R R R X R R I R R R X R R R R X R R I R R R R G
