@@ -10,6 +10,7 @@ from ui.sidebar import (
     ACTION_PLAN_ENTERING,
     ACTION_PLAN_EXITING,
     ACTION_NEXT_STEP,
+    ACTION_PREVIOUS_STEP,
     ACTION_RESET,
     ACTION_SPEED_NORMAL,
     ACTION_SPEED_SLOW,
@@ -35,9 +36,9 @@ class InputHandler:
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_c:
-                    self.gc.set_placement_vehicle_type(VehicleType.CAR)
+                    self._handle_vehicle_type_action(VehicleType.CAR)
                 elif event.key == pygame.K_m:
-                    self.gc.set_placement_vehicle_type(VehicleType.MOTORBIKE)
+                    self._handle_vehicle_type_action(VehicleType.MOTORBIKE)
                 elif event.key == pygame.K_t:
                     self.gc.toggle_auto_spawn()
                 elif event.key == pygame.K_j:
@@ -47,6 +48,8 @@ class InputHandler:
                     self._selected_vehicle_id = None
                 elif event.key == pygame.K_n:
                     self.gc.request_next_step()
+                elif event.key == pygame.K_p:
+                    self.gc.request_previous_step()
                 elif event.key == pygame.K_1:
                     self.gc.set_pathfinding_algorithm(AlgorithmType.BFS)
                 elif event.key == pygame.K_2:
@@ -162,9 +165,9 @@ class InputHandler:
             self.gc.begin_vehicle_placement()
             self._selected_vehicle_id = None
         elif action == ACTION_TYPE_CAR:
-            self.gc.set_placement_vehicle_type(VehicleType.CAR)
+            self._handle_vehicle_type_action(VehicleType.CAR)
         elif action == ACTION_TYPE_MOTORBIKE:
-            self.gc.set_placement_vehicle_type(VehicleType.MOTORBIKE)
+            self._handle_vehicle_type_action(VehicleType.MOTORBIKE)
         elif action == ACTION_PLAN_ENTERING:
             self.gc.set_placement_plan(VehiclePlan.ENTERING)
         elif action == ACTION_PLAN_EXITING:
@@ -177,5 +180,13 @@ class InputHandler:
             self.gc.toggle_step_mode()
         elif action == ACTION_NEXT_STEP:
             self.gc.request_next_step()
+        elif action == ACTION_PREVIOUS_STEP:
+            self.gc.request_previous_step()
         elif action == ACTION_MAIN_MENU:
             self.request_main_menu = True
+
+    def _handle_vehicle_type_action(self, vehicle_type: VehicleType) -> None:
+        if self.gc.simulation_status.value == "PLACING_VEHICLE":
+            self.gc.set_placement_vehicle_type(vehicle_type)
+        else:
+            self.gc.spawn_vehicle(vehicle_type)

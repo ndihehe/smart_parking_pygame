@@ -1,3 +1,4 @@
+import copy
 import random
 
 from ai.pathfinding.router import find_path, normalize_algorithm_name
@@ -50,6 +51,8 @@ class GameController:
         self.simulation_speed = 1.0
         self.step_mode_enabled = False
         self._step_requested = False
+        self._step_history: list[dict[str, object]] = []
+        self._manual_snapshots: dict[int, dict[str, object]] = {}
 
     def update(self, delta_time: float) -> None:
         if self.simulation_status in {
@@ -62,6 +65,7 @@ class GameController:
         if self.step_mode_enabled:
             if not self._step_requested:
                 return
+            self._save_step_snapshot()
             delta_time = VEHICLE_MOVE_INTERVAL
             self._step_requested = False
         else:
@@ -177,11 +181,13 @@ class GameController:
         self._auto_spawn_enabled = False
         self._tandem_exit_jobs.clear()
         self._vehicle_plans.clear()
+        self._manual_snapshots.clear()
         self.active_scenario = None
         self.simulation_status = SimulationStatus.IDLE
         self.simulation_speed = 1.0
         self.step_mode_enabled = False
         self._step_requested = False
+        self._step_history.clear()
         Logger.log("[GameController] Simulation reset")
 
     def prepare_traffic_jam_scenario(self) -> None:
@@ -254,6 +260,47 @@ class GameController:
             self._step_requested = True
             Logger.log("[GameController] Next simulation step requested")
 
+    def request_previous_step(self) -> None:
+        if not self._step_history:
+            Logger.log("[GameController] No previous step available")
+            return
+        self._restore_step_snapshot(self._step_history.pop())
+        self.step_mode_enabled = True
+        self.simulation_status = SimulationStatus.RUNNING
+        Logger.log("[GameController] Previous simulation step restored")
+
+    def _save_step_snapshot(self) -> None:
+        map_state = self.map_manager.get_state()
+        self._step_history.append(
+            {
+                "vehicles": copy.deepcopy(self.vehicle_manager.vehicles),
+                "next_vehicle_id": self.vehicle_manager._next_id,
+                "vehicle_move_timer": self.vehicle_manager._move_timer,
+                "dynamic_blocks": copy.deepcopy(map_state.dynamic_blocks),
+                "parking_slots": copy.deepcopy(map_state.parking_slots),
+                "guards": copy.deepcopy(self.guards),
+                "next_guard_id": self._next_guard_id,
+                "tandem_exit_jobs": copy.deepcopy(self._tandem_exit_jobs),
+                "vehicle_plans": copy.deepcopy(self._vehicle_plans),
+                "simulation_status": self.simulation_status,
+            }
+        )
+        if len(self._step_history) > 50:
+            self._step_history.pop(0)
+
+    def _restore_step_snapshot(self, snapshot: dict[str, object]) -> None:
+        map_state = self.map_manager.get_state()
+        self.vehicle_manager.vehicles = copy.deepcopy(snapshot["vehicles"])
+        self.vehicle_manager._next_id = int(snapshot["next_vehicle_id"])
+        self.vehicle_manager._move_timer = float(snapshot["vehicle_move_timer"])
+        map_state.dynamic_blocks = copy.deepcopy(snapshot["dynamic_blocks"])
+        map_state.parking_slots = copy.deepcopy(snapshot["parking_slots"])
+        self.guards = copy.deepcopy(snapshot["guards"])
+        self._next_guard_id = int(snapshot["next_guard_id"])
+        self._tandem_exit_jobs = copy.deepcopy(snapshot["tandem_exit_jobs"])
+        self._vehicle_plans = copy.deepcopy(snapshot["vehicle_plans"])
+        self.simulation_status = snapshot["simulation_status"]
+
     def confirm_parking(self, vehicle_id: int) -> str:
         vehicle = self.vehicle_manager.get_vehicle(vehicle_id)
         if vehicle is None:
@@ -311,15 +358,61 @@ class GameController:
         return result
 
     def set_manual(self, vehicle_id: int) -> None:
+        vehicle = self.vehicle_manager.get_vehicle(vehicle_id)
+        if vehicle is None:
+            return
+        self._manual_snapshots[vehicle.id] = {
+            "assigned_slot": vehicle.assigned_slot,
+            "wait_reason": vehicle.wait_reason,
+        }
         self.vehicle_manager.set_manual(vehicle_id)
 
     def cancel_manual(self, vehicle_id: int) -> None:
         vehicle = self.vehicle_manager.get_vehicle(vehicle_id)
         if vehicle is None or vehicle.status != VehicleStatus.MANUAL:
             return
-        self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
-        self.vehicle_manager.set_wait_reason(vehicle.id, WaitReason.YIELDING)
+
+        self._clear_manual_violation(vehicle)
+        snapshot = self._manual_snapshots.pop(vehicle.id, {})
+        if snapshot.get("wait_reason") == WaitReason.EXITING:
+            self.start_exit(vehicle.id)
+            Logger.log(f"[GameController] Vehicle #{vehicle.id} manual mode cancelled; resumed exit")
+            return
+
+        assigned_slot = snapshot.get("assigned_slot") or vehicle.assigned_slot
+        if isinstance(assigned_slot, tuple):
+            vehicle.assigned_slot = assigned_slot
+            if vehicle.position == assigned_slot:
+                self.vehicle_manager.set_status(vehicle.id, VehicleStatus.PARKED)
+                Logger.log(
+                    f"[GameController] Vehicle #{vehicle.id} manual mode cancelled; already parked"
+                )
+                return
+            path = self._path_to_parking_slot(vehicle.position, assigned_slot, vehicle.id)
+            if path:
+                self.vehicle_manager.set_path(vehicle.id, path)
+                self.vehicle_manager.set_status(vehicle.id, VehicleStatus.MOVING)
+                Logger.log(
+                    f"[GameController] Vehicle #{vehicle.id} manual mode cancelled; resumed route"
+                )
+                return
+
+        self._assign_and_path(vehicle)
+        if vehicle.status != VehicleStatus.MOVING:
+            self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
+            self.vehicle_manager.set_wait_reason(vehicle.id, WaitReason.NO_PATH)
         Logger.log(f"[GameController] Vehicle #{vehicle.id} manual mode cancelled")
+
+    def _clear_manual_violation(self, vehicle: Vehicle) -> None:
+        if vehicle.position in self.map_manager.get_state().dynamic_blocks:
+            self.map_manager.remove_dynamic_block(vehicle.position)
+        for guard in self.guards:
+            if guard.task == "VIOLATION" and guard.target_vehicle_id == vehicle.id:
+                Logger.log(
+                    f"[Guard] Guard #{guard.id} cancelled violation escort for "
+                    f"Vehicle #{vehicle.id}; manual mode cleared"
+                )
+                self._return_guard_home(guard)
 
     def start_exit(self, vehicle_id: int) -> None:
         vehicle = self.vehicle_manager.get_vehicle(vehicle_id)

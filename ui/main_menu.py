@@ -8,7 +8,7 @@ from ui.button import UIButton
 ACTION_PLAY = "play"
 ACTION_EXIT = "exit"
 BACKGROUND_PATH = Path("assets/ui/main_menu_background.png")
-CREDIT_TEXT = "Produced by: Tong Hoang Tung - Nguyen Thi Hong Gam - Bui Nguyen Nhat Duy"
+CREDIT_TEXT = "Produced by: Tong Hoang Tung - Vo Thi Hong Gam - Bui Nguyen Nhat Duy"
 
 
 class MainMenu:

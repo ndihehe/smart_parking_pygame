@@ -21,6 +21,7 @@ ACTION_SPEED_NORMAL = "speed_normal"
 ACTION_SPEED_SLOW = "speed_slow"
 ACTION_STEP_MODE = "step_mode"
 ACTION_NEXT_STEP = "next_step"
+ACTION_PREVIOUS_STEP = "previous_step"
 ACTION_MAIN_MENU = "main_menu"
 ACTION_ALGORITHM_PREFIX = "algorithm:"
 
@@ -121,7 +122,7 @@ def draw_sidebar(
         step_mode_enabled,
     ):
         button.draw(screen, font_small, mouse_pos)
-    y += (BUTTON_HEIGHT + BUTTON_GAP) * 7 + 22
+    y += (BUTTON_HEIGHT + BUTTON_GAP) * 8 + 22
 
     y = _draw_section(screen, font_small, "Status", x, y)
     y = _draw_status_cards(screen, font, font_small, vehicles, x, y, width)
@@ -290,15 +291,20 @@ def _control_buttons(
         UIButton(
             ACTION_STEP_MODE,
             "Step Mode",
-            pygame.Rect(x, y + (BUTTON_HEIGHT + BUTTON_GAP) * 5, half_width, BUTTON_HEIGHT),
+            pygame.Rect(x, y + (BUTTON_HEIGHT + BUTTON_GAP) * 5, width, BUTTON_HEIGHT),
             selected=step_mode_enabled,
         ),
         UIButton(
+            ACTION_PREVIOUS_STEP,
+            "< Prev",
+            pygame.Rect(x, y + (BUTTON_HEIGHT + BUTTON_GAP) * 6, half_width, BUTTON_HEIGHT),
+        ),
+        UIButton(
             ACTION_NEXT_STEP,
-            "Next Step",
+            "Next >",
             pygame.Rect(
                 x + half_width + BUTTON_GAP,
-                y + (BUTTON_HEIGHT + BUTTON_GAP) * 5,
+                y + (BUTTON_HEIGHT + BUTTON_GAP) * 6,
                 half_width,
                 BUTTON_HEIGHT,
             ),
@@ -306,7 +312,7 @@ def _control_buttons(
         UIButton(
             ACTION_MAIN_MENU,
             "Main Menu",
-            pygame.Rect(x, y + (BUTTON_HEIGHT + BUTTON_GAP) * 6, width, BUTTON_HEIGHT),
+            pygame.Rect(x, y + (BUTTON_HEIGHT + BUTTON_GAP) * 7, width, BUTTON_HEIGHT),
         ),
     ]
 
@@ -386,6 +392,7 @@ def _draw_shortcuts(
         "R: reset",
         "J: traffic jam mode",
         "N: next step",
+        "P: previous step",
         "F11: fullscreen",
     ]
     for index, hint in enumerate(hints):
