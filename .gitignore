@@ -11,6 +11,7 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+assets/generated/sprite_cache/
 
 build/
 dist/
@@ -19,4 +20,3 @@ dist/
 .env
 .DS_Store
 Thumbs.db
-

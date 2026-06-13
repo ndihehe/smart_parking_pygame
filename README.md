@@ -16,7 +16,7 @@ Hệ thống **không** sử dụng Machine Learning, Deep Learning hay Computer
 - Tìm đường từ vị trí hiện tại đến ô đỗ hoặc cổng ra bằng thuật toán tìm kiếm.
 - So sánh và chuyển đổi giữa **BFS**, **DFS**, **Greedy Best-First Search** và **A*** trong cùng một môi trường mô phỏng.
 - Quản lý trạng thái xe: `MOVING`, `PARKED`, `WAITING`, `MANUAL`, `REROUTING`, `ARRIVED`, `VIOLATION`.
-- Xử lý ùn tắc giao thông trong bãi: phát hiện kẹt tại ngã tư, nhường đường, reroute và điều phối bằng guard.
+- Xử lý ùn tắc giao thông trong bãi: phát hiện kẹt tại ngã tư, nhường đường theo độ ưu tiên và reroute khi cần; guard chỉ xử lý vi phạm đỗ sai chỗ/sai loại.
 - Gán ô đỗ theo loại xe (ô tô / xe máy) và chấm điểm vị trí phù hợp.
 - Hỗ trợ kịch bản **Traffic Jam Mode** và đặt xe thủ công để kiểm thử các tình huống.
 
@@ -29,7 +29,7 @@ Hệ thống **không** sử dụng Machine Learning, Deep Learning hay Computer
 | Ngôn ngữ | Python 3 (khuyến nghị Python 3.11 trở lên; dự án đã kiểm thử với Python 3.13) |
 | Thư viện chính | [Pygame](https://www.pygame.org/) `>= 2.6.0` (dependency duy nhất trong `requirements.txt`) |
 | Thư viện chuẩn | `json`, `pathlib`, `collections`, `heapq`, `dataclasses`, `enum`, `unittest` |
-| Assets | Kenney Pixel Vehicle Pack (license CC0) — sprite xe, guard, props |
+| Assets | Kenney Pixel Vehicle Pack (CC0), TopDown Vehicles v1.17 và retro vehicle sprites — sprite xe, moto, guard, props |
 | Bản đồ | `data/map_layout.json` (ảnh nền + lưới logic), `data/maps/default_map.txt` (định dạng text) |
 | Công cụ phụ | `tools/map_annotator.py` — công cụ Pygame để gán loại ô lên ảnh bản đồ |
 
@@ -110,12 +110,12 @@ Các chức năng dưới đây đều có trong code hiện tại:
 - Phát hiện ùn tắc tại ngã tư (số xe chờ, thời gian chờ, timer ngã tư).
 - Giải quyết xung đột nhiều xe cùng nhắm một ô (`resolve_conflict`).
 - Reroute khi kẹt quá lâu.
-- **Guard** — hỗ trợ xử lý vi phạm đỗ sai loại/vị trí, điều phối giao thông, escort xe.
+- **Guard** — chỉ hỗ trợ xử lý vi phạm đỗ sai loại/vị trí và escort xe về luồng hợp lệ; xe kẹt/nhường đường do traffic logic tự xử lý.
 
 ### Thống kê và log
-- Sidebar hiển thị số xe **Moving**, **Parked**, **Waiting**.
+- Sidebar thay phần status cũ bằng bảng **Algorithm Metrics** cho BFS/DFS/Greedy/A*: `Calls`, `Last`, `Avg`, `Best`, `Worst`, `KB`, `Len`.
 - Overlay góc trái khi chọn xe: id, type, status, wait reason, vị trí, slot, độ dài path.
-- Log sự kiện in ra **console** qua `Logger` (không có panel log trên màn hình game).
+- Log sự kiện in ra **console** qua `Logger` (không có panel log trên màn hình game). Metrics thuật toán được lưu trong RAM đến khi tắt chương trình.
 
 ### Kiểm thử
 - Unit test cho map manager, parking manager, pathfinding, traffic controller trong thư mục `tests/`.
@@ -212,85 +212,56 @@ Tất cả thuật toán được triển khai trong `ai/pathfinding/`, gọi th
 
 ```text
 smart_parking_pygame/
-├── main.py                 # Điểm vào: khởi tạo PygameApp, load map_layout.json
-├── config.py               # Hằng số: kích thước map, FPS, ngưỡng giao thông, UI
-├── requirements.txt        # Dependency: pygame>=2.6.0
-├── README.md
-├── history.md              # Nhật ký phát triển dự án
-│
-├── core/                   # Logic mô phỏng chính
-│   ├── game_controller.py  # Điều phối toàn bộ: spawn, path, manual, guard, scenario
-│   ├── map_manager.py      # Load map (.json / .txt), kiểm tra ô đi được
-│   ├── vehicle_manager.py  # Quản lý xe, di chuyển theo path, trạng thái
-│   ├── parking_manager.py  # Gán slot, validate đỗ xe, occupy/release
-│   ├── traffic_controller.py # Ùn tắc, xung đột, reroute, guard traffic
-│   ├── scenario_manager.py # Xây dựng kịch bản Traffic Jam
-│   ├── vehicle_placement.py# Đặt xe thủ công lên map
-│   └── simulation_state.py # Enum trạng thái mô phỏng và kế hoạch xe
-│
-├── models/                 # Dữ liệu và enum
-│   ├── enums.py            # CellType, VehicleType, VehicleStatus, AlgorithmType, WaitReason
-│   ├── vehicle.py          # Model xe
-│   ├── guard.py            # Model guard
-│   ├── map_state.py        # Trạng thái bản đồ (grid, gates, slots, intersections)
-│   └── parking_slot.py     # Model ô đỗ
-│
-├── ai/                     # Trí tuệ nhân tạo
-│   ├── pathfinding/
-│   │   ├── router.py       # Facade: find_path(), chọn thuật toán
-│   │   ├── bfs.py          # Breadth-First Search
-│   │   ├── dfs.py          # Depth-First Search
-│   │   ├── greedy.py       # Greedy Best-First Search
-│   │   ├── astar.py        # A*
-│   │   ├── heuristic.py    # Manhattan distance
-│   │   └── path_utils.py   # Reconstruct path
-│   └── decision/
-│       ├── slot_scoring.py # Chấm điểm ô đỗ
-│       └── priority_rule.py# Ưu tiên xe tại xung đột
-│
-├── ui/                     # Giao diện Pygame
-│   ├── pygame_app.py       # Vòng lặp game, chuyển scene Menu / Game
-│   ├── main_menu.py        # Start menu
-│   ├── renderer.py         # Vẽ map, xe, path, guard, overlay
-│   ├── sidebar.py          # Panel điều khiển và thống kê
-│   ├── input_handler.py    # Bàn phím, chuột, sidebar actions
-│   ├── hud_overlay.py      # Wrapper gọi draw_sidebar
-│   ├── map_tile_renderer.py# Vẽ tile / decoration
-│   ├── sprite_loader.py    # Load sprite Kenney
-│   ├── view_transform.py   # Viewport, map pixel ↔ screen
-│   ├── ui_layout.py        # Kích thước cửa sổ tối thiểu
-│   ├── button.py           # Nút UI tái sử dụng
-│   └── colors.py           # Bảng màu
-│
-├── utils/
-│   ├── grid_utils.py       # Hàng xóm lưới, Manhattan
-│   ├── logger.py           # Log ra console
-│   └── debug.py
-│
-├── data/
-│   ├── map_layout.json     # Map mặc định (30×40, ảnh nền parking_map.png)
-│   └── maps/
-│       └── default_map.txt # Map dạng text (20×32), dùng khi load file .txt
-│
-├── assets/
-│   ├── maps/               # Ảnh bản đồ
-│   ├── ui/                 # Nền main menu
-│   └── kenney_pixel_vehicle_pack/  # Sprite CC0 (xe, guard, props)
-│
-├── tools/
-│   └── map_annotator.py    # Công cụ gán loại ô lên ảnh, export map_layout.json
-│
-├── tests/                  # Unit tests (unittest)
-│   ├── test_map_manager.py
-│   ├── test_parking_manager.py
-│   ├── test_pathfinding.py
-│   └── test_traffic_controller.py
-│
-├── De_xuat/
-│   └── de_xuat.md          # Tài liệu đề xuất (không ảnh hưởng runtime)
-│
-└── eight_queens/           # Dự án phụ: mô phỏng N-Queens bằng AND-OR Search (Tkinter)
-    └── eight_queens_and_or.py
+|-- main.py                  # Diem vao chuong trinh, load data/map_layout.json
+|-- config.py                # Hang so: kich thuoc, FPS, nguong traffic, UI
+|-- requirements.txt         # Dependency chinh: pygame>=2.6.0
+|-- README.md
+|-- history.md               # Nhat ky phat trien du an
+|
+|-- core/                    # Logic mo phong chinh
+|   |-- game_controller.py   # Dieu phoi spawn, path, manual, guard, scenario
+|   |-- map_manager.py       # Load map .json/.txt, kiem tra o hop le
+|   |-- vehicle_manager.py   # Quan ly xe va di chuyen theo path
+|   |-- parking_manager.py   # Gan slot, validate do xe, occupy/release
+|   |-- traffic_controller.py # Un tac, xung dot, nhuong duong, reroute
+|   |-- pathfinding_metrics.py # Thong ke thoi gian/bo nho thuat toan
+|   |-- scenario_manager.py  # Tao kich ban Traffic Jam
+|   |-- vehicle_placement.py # Dat xe thu cong len map
+|   `-- simulation_state.py  # Trang thai mo phong va ke hoach xe
+|
+|-- models/                  # Dataclass va enum
+|   |-- enums.py             # CellType, VehicleType, VehicleStatus, AlgorithmType, WaitReason
+|   |-- vehicle.py           # Model xe
+|   |-- guard.py             # Model guard
+|   |-- map_state.py         # Trang thai ban do
+|   `-- parking_slot.py      # Model o do
+|
+|-- ai/                      # Pathfinding va decision rules
+|   |-- pathfinding/         # BFS, DFS, Greedy, A*, router, heuristic
+|   `-- decision/            # Slot scoring va priority rule
+|
+|-- ui/                      # Giao dien Pygame
+|   |-- pygame_app.py        # Vong lap game, scene Menu/Game
+|   |-- main_menu.py         # Start menu
+|   |-- renderer.py          # Ve map, xe, path, guard, overlay
+|   |-- sidebar.py           # Panel dieu khien va Algorithm Metrics
+|   |-- input_handler.py     # Ban phim, chuot, sidebar actions
+|   |-- hud_overlay.py       # Wrapper goi draw_sidebar
+|   |-- map_tile_renderer.py # Ve tile/decor
+|   |-- sprite_loader.py     # Load/cache sprite Kenney, TopDown, retro
+|   |-- view_transform.py    # Viewport va map pixel <-> screen
+|   |-- ui_layout.py         # Kich thuoc cua so toi thieu
+|   |-- button.py            # Nut UI tai su dung
+|   `-- colors.py            # Bang mau
+|
+|-- utils/                   # Grid utils, logger, debug
+|-- data/                    # map_layout.json va default_map.txt
+|-- assets/                  # Anh map, UI, Kenney sprites
+|-- tests/                   # Unit tests
+|-- tools/                   # map_annotator.py
+|-- retro-vechicle-sprites-64x64/ # Asset moto retro nguon
+|-- TopDown Vehicles v1.17/        # Asset xe top-down nguon
+`-- De_xuat/                # Tai lieu de xuat
 ```
 
 ### Loại ô trên bản đồ
@@ -390,10 +361,10 @@ Sidebar cung cấp thêm các nút tương ứng: chọn thuật toán, Place Ve
 ## Giới hạn hiện tại
 
 - Xe di chuyển theo từng ô (discrete step), chưa có animation nội suy mượt giữa các cell.
-- Logic ùn tắc và reroute ở mức rule-based; cần thêm kiểm thử cho các tình huống phức tạp.
+- Logic ùn tắc và reroute ở mức rule-based; guard không còn điều phối traffic mà chỉ xử lý vi phạm đỗ xe.
 - Log chỉ hiển thị trên console, chưa có panel log trong UI game.
 - Map mặc định 30×40; map text `default_map.txt` là 20×32 — kích thước phụ thuộc file được load.
 
 ## License assets
 
-Sprite trong `assets/kenney_pixel_vehicle_pack/` thuộc **Kenney Pixel Vehicle Pack**, license **CC0**. Chi tiết trong `assets/kenney_pixel_vehicle_pack/License.txt`.
+Sprite trong `assets/kenney_pixel_vehicle_pack/` thuộc **Kenney Pixel Vehicle Pack**, license **CC0**. Các asset `TopDown Vehicles v1.17` và `retro-vechicle-sprites-64x64` được dùng làm nguồn sprite xe/moto; cần giữ đúng license đi kèm asset nếu phân phối lại.

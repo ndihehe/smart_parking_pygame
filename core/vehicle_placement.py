@@ -1,7 +1,6 @@
 from core.map_manager import MapManager
 from core.vehicle_manager import VehicleManager
 from models.enums import VehicleType
-from models.map_state import MapState
 
 
 class VehiclePlacement:

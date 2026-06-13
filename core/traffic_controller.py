@@ -59,12 +59,11 @@ class TrafficController:
             ):
                 for vehicle in waiting_vehicles:
                     vehicle.wait_reason = WaitReason.TRAFFIC_CONGESTION
-                self._handle_congestion(
+        self._handle_congestion(
                     intersection,
                     waiting_vehicles,
                     map_manager,
                     occupied_positions,
-                    guards,
                     algorithm,
                 )
 
@@ -77,8 +76,6 @@ class TrafficController:
         self._resolve_head_on_swaps(
             vehicles,
             map_manager,
-            guards,
-            algorithm,
             delta_time,
         )
 
@@ -105,8 +102,6 @@ class TrafficController:
         self,
         vehicles: list[Vehicle],
         map_manager: MapManager,
-        guards: list[Guard] | None,
-        algorithm: str | AlgorithmType,
         delta_time: float,
     ) -> None:
         moving = [
@@ -211,7 +206,6 @@ class TrafficController:
         waiting_vehicles: list[Vehicle],
         map_manager: MapManager,
         occupied_positions: set[tuple[int, int]],
-        guards: list[Guard] | None,
         algorithm: str | AlgorithmType,
     ) -> None:
         if not waiting_vehicles:
@@ -326,12 +320,3 @@ class TrafficController:
             f"[TrafficController] Obstacle at {blocked_cell}, "
             f"{rerouted_count} vehicles rerouted"
         )
-
-    def _dispatch_traffic_guard(
-        self,
-        position: tuple[int, int],
-        map_manager: MapManager,
-        guards: list[Guard] | None,
-        algorithm: str | AlgorithmType = AlgorithmType.ASTAR,
-    ) -> None:
-        return

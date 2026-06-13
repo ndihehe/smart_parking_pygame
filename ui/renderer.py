@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pygame
 
-from config import CELL_SIZE
 from core.simulation_state import SimulationStatus, VehiclePlan
 from core.pathfinding_metrics import METRICS
 from models.enums import VehicleStatus, VehicleType
@@ -26,7 +25,6 @@ from ui.hud_overlay import draw_hud
 from ui.map_tile_renderer import MapTileRenderer
 from ui.sprite_loader import SpriteLoader
 from ui.view_transform import get_game_viewport_rect, get_map_view_rect, map_pixel_size
-from utils.logger import Logger
 
 
 class Renderer:
@@ -336,9 +334,7 @@ class Renderer:
             self.screen.blit(label, label.get_rect(center=(center[0], y + map_state.tile_size - 5)))
 
     def _get_guard_sprite(self, guard: Guard) -> pygame.Surface | None:
-        if guard.task == "TRAFFIC":
-            sprite = self._sprites.get("guard_point")
-        elif guard.path or guard.is_walking:
+        if guard.path or guard.is_walking:
             frames = [
                 self._sprites.get("guard"),
                 self._sprites.get("guard_walk"),

@@ -6,9 +6,6 @@ from utils.logger import Logger
 
 
 class ParkingManager:
-    def __init__(self) -> None:
-        pass
-
     def find_slot(self, vehicle: Vehicle, map_state: MapState) -> tuple[int, int] | None:
         best_position: tuple[int, int] | None = None
         best_score: float | None = None

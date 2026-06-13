@@ -1150,8 +1150,6 @@ class GameController:
 
             if guard.task == "VIOLATION":
                 self._handle_guard_reached_violation(guard)
-            elif guard.task == "TRAFFIC":
-                self._handle_guard_reached_traffic(guard)
             elif guard.task == "RETURNING":
                 guard.task = "IDLE"
                 guard.is_active = False
@@ -1193,13 +1191,6 @@ class GameController:
             "to a valid slot"
         )
         self._assign_and_path(vehicle)
-        self._return_guard_home(guard)
-
-    def _handle_guard_reached_traffic(self, guard: Guard) -> None:
-        Logger.log(
-            f"[Guard] Guard #{guard.id} coordinated traffic at "
-            f"{guard.target_position}"
-        )
         self._return_guard_home(guard)
 
     def _return_guard_home(self, guard: Guard) -> None:

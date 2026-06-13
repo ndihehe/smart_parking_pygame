@@ -1072,3 +1072,43 @@ py -3.13 -m unittest discover -s tests
 ```
 
 Kết quả: 36 tests OK. Render smoke headless OK.
+
+## 42. Sửa bug moto tandem, cập nhật guard, metrics thuật toán và dọn code thừa
+
+Người dùng báo nhiều lỗi nghiệp vụ sau khi bổ sung asset xe mới và mô phỏng xe máy đỗ hai hàng:
+
+- Hai xe máy đỗ dạng trong/ngoài, xe bên trong không rời bãi được.
+- Xe đã đỗ có thể bị gán lại slot khi xe mới spawn.
+- Click chọn Car/Motorbike chưa cập nhật UI hoặc spawn đúng theo trạng thái place mode.
+- Guard không nên đi điều phối kẹt xe; xe tự nhường đường và reroute theo traffic logic.
+- Bảng `Status` cũ không hữu ích, cần thay bằng bảng so sánh metrics thuật toán.
+- UI metrics bị tràn cột, cần chỉnh layout rõ ràng hơn.
+- Dự án còn import/code thừa sau nhiều vòng sửa.
+
+Các thay đổi đã thực hiện:
+
+- `core/game_controller.py`: sửa luồng moto tandem. Xe ngoài tạm né sang ô hợp lệ, xe trong được ưu tiên thoát, slot trong được giữ cho xe ngoài quay vào, không reserve nhầm ô ngoài làm chặn đường thoát.
+- `core/game_controller.py`, `core/traffic_controller.py`, `ai/decision/priority_rule.py`: giữ intent `EXITING`, ưu tiên xe đang rời bãi khi có xung đột, không để xe ra về bị gán lại slot.
+- `core/parking_manager.py`, `core/game_controller.py`: không route lại xe đã `PARKED` hoặc đã có slot hợp lệ; xe mới chỉ được assign slot còn khả dụng.
+- `ui/input_handler.py`, `core/game_controller.py`: tách chọn loại xe khỏi place mode. Click Car/Motorbike cập nhật UI ngay; ngoài place mode vẫn spawn xe.
+- `core/traffic_controller.py`, `core/game_controller.py`, `ui/renderer.py`: bỏ luồng guard điều phối traffic. Guard chỉ còn xử lý xe vi phạm đỗ sai loại/vị trí; kẹt xe dùng priority/yield/reroute.
+- `models/guard.py`, `core/game_controller.py`, `ui/renderer.py`: guard lưu `is_walking` và `facing_delta` để animation đi bộ không bị rơi về frame đứng khi path vừa hết.
+- `core/pathfinding_metrics.py`: thêm metrics session cho BFS/DFS/Greedy/A*: số lần gọi, thời gian gần nhất, trung bình, nhanh nhất, chậm nhất, bộ nhớ KB và độ dài path.
+- `ai/pathfinding/router.py`: bọc `find_path()` bằng đo thời gian/bộ nhớ bằng `perf_counter()` và `tracemalloc`.
+- `ui/sidebar.py`, `ui/hud_overlay.py`, `ui/renderer.py`: thay bảng status bằng `Algorithm Metrics`, căn lại cột để không tràn khung.
+- `ui/sprite_loader.py`, `ui/renderer.py`: dùng nhiều sprite xe TopDown/retro hơn và chọn frame theo hướng di chuyển để xe nhìn đa dạng hơn.
+- `.gitignore`: ignore `assets/generated/sprite_cache/`; xóa `__pycache__` local.
+- Dọn import thừa, `ParkingManager.__init__()` rỗng, metric `failures/reset` không còn dùng và code traffic guard dead path.
+
+Đã chạy:
+
+```bash
+python -m py_compile <toàn bộ file .py>
+python -m unittest tests.test_exit_intent tests.test_parking_manager tests.test_pathfinding tests.test_map_manager
+```
+
+Kết quả:
+
+- Compile toàn bộ `.py`: OK.
+- Focused tests: 26 tests OK.
+- Full `unittest discover tests` vẫn bị chặn bởi môi trường Python hiện tại thiếu `pygame` cho `tests/test_traffic_controller.py`, không phải lỗi syntax/code.

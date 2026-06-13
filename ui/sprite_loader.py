@@ -87,11 +87,6 @@ class SpriteLoader:
                 CELL_SIZE - 12,
                 CELL_SIZE - 8,
             ),
-            "guard_point": (
-                os.path.join("characters", "guard_point.png"),
-                CELL_SIZE - 8,
-                CELL_SIZE - 8,
-            ),
             "gate": (
                 os.path.join("props", "gate.png"),
                 CELL_SIZE,

@@ -12,7 +12,6 @@ T = TypeVar("T")
 @dataclass
 class AlgorithmMetrics:
     runs: int = 0
-    failures: int = 0
     total_time_ms: float = 0.0
     last_time_ms: float | None = None
     best_time_ms: float | None = None
@@ -66,15 +65,9 @@ class PathfindingMetrics:
             else max(metrics.peak_memory_kb, memory_kb)
         )
         metrics.last_path_length = path_length if success else None
-        if not success:
-            metrics.failures += 1
 
     def snapshot(self) -> dict[str, AlgorithmMetrics]:
         return self._metrics.copy()
-
-    def reset(self) -> None:
-        for algorithm in self._metrics:
-            self._metrics[algorithm] = AlgorithmMetrics()
 
 
 METRICS = PathfindingMetrics()

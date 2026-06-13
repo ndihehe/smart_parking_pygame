@@ -8,7 +8,6 @@ from models.enums import AlgorithmType, VehicleType
 from models.map_state import MapState
 from models.vehicle import Vehicle
 from ui.sidebar import (
-    algorithm_label,
     draw_sidebar,
     sidebar_action_at_position,
 )
