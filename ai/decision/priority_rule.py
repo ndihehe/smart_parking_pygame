@@ -3,8 +3,11 @@ from config import (
     DIRECTION_BONUS_TURN,
     WAIT_TIME_WEIGHT,
 )
+from models.enums import WaitReason
 from models.vehicle import Vehicle
 from utils.grid_utils import manhattan_distance
+
+EXITING_PRIORITY_BONUS = 1000.0
 
 
 def calculate_priority(vehicle: Vehicle, goal: tuple[int, int]) -> float:
@@ -20,6 +23,8 @@ def calculate_priority(vehicle: Vehicle, goal: tuple[int, int]) -> float:
         + direction_bonus
         - vehicle.id * 0.001
     )
+    if vehicle.wait_reason == WaitReason.EXITING:
+        score += EXITING_PRIORITY_BONUS
     return score
 
 

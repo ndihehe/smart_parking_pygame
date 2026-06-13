@@ -100,8 +100,8 @@ class GameController:
             elif vehicle.status == VehicleStatus.WAITING:
                 self._recover_waiting_vehicle(vehicle)
             elif vehicle.status == VehicleStatus.ARRIVED:
-                if vehicle.wait_reason == WaitReason.EXITING:
-                    self._finish_vehicle_exit(vehicle)
+                if self._is_exiting_vehicle(vehicle):
+                    self._reroute_exiting_vehicle(vehicle)
                 else:
                     self._validate_and_apply_parking(vehicle)
         self._update_guards(delta_time)
@@ -206,11 +206,11 @@ class GameController:
 
     def set_placement_vehicle_type(self, vehicle_type: VehicleType) -> None:
         self.placement_vehicle_type = vehicle_type
-        self.begin_vehicle_placement()
+        Logger.log(f"[GameController] Placement vehicle type -> {vehicle_type.value}")
 
     def set_placement_plan(self, plan: VehiclePlan) -> None:
         self.placement_plan = plan
-        self.begin_vehicle_placement()
+        Logger.log(f"[GameController] Placement plan -> {plan.value}")
 
     def place_vehicle_at(self, position: tuple[int, int]) -> bool:
         if self.simulation_status != SimulationStatus.PLACING_VEHICLE:
@@ -419,6 +419,8 @@ class GameController:
         if vehicle is None:
             return
 
+        self._vehicle_plans[vehicle.id] = VehiclePlan.EXITING
+
         if self._try_start_tandem_inner_exit(vehicle):
             return
 
@@ -517,6 +519,9 @@ class GameController:
         Logger.log(f"[GameController] Pathfinding algorithm -> {self.current_algorithm}")
 
     def _assign_and_path(self, vehicle: Vehicle) -> None:
+        if vehicle.status == VehicleStatus.PARKED and vehicle.assigned_slot is not None:
+            return
+
         slot = self.parking_manager.find_slot(vehicle, self.map_manager.get_state())
         if slot is None:
             self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
@@ -539,7 +544,7 @@ class GameController:
             Logger.log(f"[GameController] Vehicle #{vehicle.id} no path found")
 
     def _reroute_vehicle(self, vehicle: Vehicle) -> None:
-        if vehicle.wait_reason == WaitReason.EXITING:
+        if self._is_exiting_vehicle(vehicle):
             self._reroute_exiting_vehicle(vehicle)
             return
 
@@ -617,8 +622,14 @@ class GameController:
         if self.vehicle_manager.get_vehicle(vehicle.id) is not None:
             Logger.log(f"[GameController] Vehicle #{vehicle.id} rerouting to exit")
 
+    def _is_exiting_vehicle(self, vehicle: Vehicle) -> bool:
+        return (
+            vehicle.wait_reason == WaitReason.EXITING
+            or self._vehicle_plans.get(vehicle.id) == VehiclePlan.EXITING
+        )
+
     def _recover_waiting_vehicle(self, vehicle: Vehicle) -> None:
-        if vehicle.wait_reason == WaitReason.EXITING:
+        if self._is_exiting_vehicle(vehicle):
             if vehicle.position in self._exit_gates():
                 self._finish_vehicle_exit(vehicle)
                 return
@@ -745,6 +756,7 @@ class GameController:
 
     def _finish_vehicle_exit(self, vehicle: Vehicle) -> None:
         self.parking_manager.release_vehicle_slot(vehicle, self.map_manager.get_state())
+        self._vehicle_plans.pop(vehicle.id, None)
         Logger.log(f"[GameController] Vehicle #{vehicle.id} exited the parking lot")
         self.vehicle_manager.remove_vehicle(vehicle.id)
 
@@ -760,7 +772,11 @@ class GameController:
         if outer_vehicle is None:
             return False
 
-        temp_position = self._temporary_drive_cell_for_tandem(outer_slot, {vehicle.id, outer_vehicle.id})
+        temp_position = self._temporary_drive_cell_for_tandem(
+            outer_slot,
+            {vehicle.id, outer_vehicle.id},
+            vehicle.position,
+        )
         if temp_position is None:
             temp_position = outer_slot
             Logger.log(
@@ -777,6 +793,11 @@ class GameController:
             self._occupied_positions(outer_vehicle.id),
         )
         if not path and outer_vehicle.position != temp_position:
+            self.parking_manager.occupy_slot(
+                outer_vehicle,
+                outer_slot,
+                map_state,
+            )
             Logger.log(
                 f"[Guard] Cannot move outer motorbike #{outer_vehicle.id} away from {outer_slot}"
             )
@@ -828,11 +849,19 @@ class GameController:
                     )
                     self._tandem_exit_jobs[inner_id]["phase"] = "INNER_EXITING"
                     self.start_exit(inner_id)
+                    self._reserve_tandem_inner_slot_for_outer(outer_vehicle, inner_slot)
                 else:
                     del self._tandem_exit_jobs[inner_id]
 
             elif phase == "INNER_EXITING":
-                if inner_vehicle is not None:
+                outer_slot = job["outer_slot"]
+                if not isinstance(outer_slot, tuple):
+                    del self._tandem_exit_jobs[inner_id]
+                    continue
+                if (
+                    inner_vehicle is not None
+                    and inner_vehicle.position in {inner_slot, outer_slot}
+                ):
                     continue
                 outer_vehicle.wait_time = 0.0
                 self.parking_manager.assign_slot(
@@ -891,14 +920,38 @@ class GameController:
         self,
         outer_slot: tuple[int, int],
         excluded_vehicle_ids: set[int],
+        inner_slot: tuple[int, int] | None = None,
     ) -> tuple[int, int] | None:
-        occupied_positions = self._occupied_positions(None)
+        occupied_positions = {
+            vehicle.position
+            for vehicle in self.vehicle_manager.get_all_vehicles()
+            if vehicle.id not in excluded_vehicle_ids
+        }
+        exit_delta = None
+        if inner_slot is not None:
+            exit_delta = (
+                outer_slot[0] - inner_slot[0],
+                outer_slot[1] - inner_slot[1],
+            )
+        candidates: list[tuple[int, int]] = []
+
+        def is_clear_temporary_cell(position: tuple[int, int]) -> bool:
+            if position in occupied_positions:
+                return False
+            slot = self.map_manager.get_state().parking_slots.get(position)
+            if slot is None:
+                return self.map_manager.is_drive_cell(position)
+            return (
+                slot.slot_type == VehicleType.MOTORBIKE
+                and not slot.is_occupied
+                and not slot.is_reserved
+                and position != inner_slot
+                and position != outer_slot
+            )
+
         for neighbor in self.map_manager.get_state().intersection_neighbors.get(outer_slot, []):
-            if (
-                self.map_manager.is_drive_cell(neighbor)
-                and neighbor not in occupied_positions
-            ):
-                return neighbor
+            if is_clear_temporary_cell(neighbor):
+                candidates.append(neighbor)
         from utils.grid_utils import get_neighbors
 
         for neighbor in get_neighbors(
@@ -907,15 +960,42 @@ class GameController:
             self.map_manager.get_state().cols,
         ):
             if (
-                self.map_manager.is_drive_cell(neighbor)
-                and neighbor not in {
-                    vehicle.position
-                    for vehicle in self.vehicle_manager.get_all_vehicles()
-                    if vehicle.id not in excluded_vehicle_ids
-                }
+                is_clear_temporary_cell(neighbor)
+                and neighbor not in candidates
             ):
-                return neighbor
-        return None
+                candidates.append(neighbor)
+        if not candidates:
+            return None
+        candidates.sort(
+            key=lambda neighbor: (
+                exit_delta is not None
+                and (
+                    neighbor[0] - outer_slot[0],
+                    neighbor[1] - outer_slot[1],
+                )
+                == exit_delta,
+                neighbor in self.map_manager.get_state().parking_slots,
+                abs(neighbor[0] - outer_slot[0]) + abs(neighbor[1] - outer_slot[1]),
+            )
+        )
+        return candidates[0]
+
+    def _reserve_tandem_inner_slot_for_outer(
+        self,
+        outer_vehicle: Vehicle,
+        inner_slot: tuple[int, int],
+    ) -> None:
+        map_state = self.map_manager.get_state()
+        if outer_vehicle.assigned_slot is not None and outer_vehicle.assigned_slot != inner_slot:
+            self.parking_manager.release_vehicle_slot(outer_vehicle, map_state)
+        slot = map_state.parking_slots.get(inner_slot)
+        if slot is not None:
+            slot.is_reserved = True
+            slot.reserved_by = outer_vehicle.id
+            if slot.occupied_by == outer_vehicle.id:
+                slot.is_occupied = False
+                slot.occupied_by = None
+        outer_vehicle.assigned_slot = inner_slot
 
     def _path_to_parking_slot(
         self,
@@ -1058,8 +1138,15 @@ class GameController:
             guard.move_timer = 0.0
 
             if guard.path:
-                guard.position = guard.path.pop(0)
+                next_position = guard.path.pop(0)
+                guard.facing_delta = (
+                    next_position[0] - guard.position[0],
+                    next_position[1] - guard.position[1],
+                )
+                guard.position = next_position
+                guard.is_walking = True
                 continue
+            guard.is_walking = False
 
             if guard.task == "VIOLATION":
                 self._handle_guard_reached_violation(guard)
@@ -1070,6 +1157,7 @@ class GameController:
                 guard.is_active = False
                 guard.target_vehicle_id = None
                 guard.target_position = None
+                guard.is_walking = False
                 Logger.log(f"[Guard] Guard #{guard.id} returned to post")
 
     def _handle_guard_reached_violation(self, guard: Guard) -> None:
@@ -1126,8 +1214,10 @@ class GameController:
             self._occupied_positions(None),
         )
         guard.is_active = True
+        guard.is_walking = bool(guard.path)
         if not guard.path and guard.position == guard.home_position:
             guard.task = "IDLE"
             guard.is_active = False
             guard.target_position = None
+            guard.is_walking = False
             Logger.log(f"[Guard] Guard #{guard.id} returned to post")

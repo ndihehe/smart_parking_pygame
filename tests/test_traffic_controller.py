@@ -271,7 +271,7 @@ class TestTrafficController(unittest.TestCase):
         self.assertEqual(first.wait_reason, WaitReason.YIELDING)
         self.assertEqual(first.path, [(0, 1), (0, 2)])
 
-    def test_guard_coordinates_cell_conflict(self) -> None:
+    def test_cell_conflict_does_not_dispatch_guard(self) -> None:
         gc = GameController(MAP_PATH)
         first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
         second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 2))
@@ -287,8 +287,8 @@ class TestTrafficController(unittest.TestCase):
             0.1,
             gc.guards,
         )
-        self.assertEqual(gc.guards[0].task, "TRAFFIC")
-        self.assertEqual(gc.guards[0].target_position, (0, 1))
+        self.assertEqual(gc.guards[0].task, "IDLE")
+        self.assertIsNone(gc.guards[0].target_position)
         waiting = [vehicle for vehicle in (first, second) if vehicle.status == VehicleStatus.WAITING]
         self.assertEqual(len(waiting), 1)
         self.assertEqual(waiting[0].wait_reason, WaitReason.YIELDING)

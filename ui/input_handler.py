@@ -186,7 +186,6 @@ class InputHandler:
             self.request_main_menu = True
 
     def _handle_vehicle_type_action(self, vehicle_type: VehicleType) -> None:
-        if self.gc.simulation_status.value == "PLACING_VEHICLE":
-            self.gc.set_placement_vehicle_type(vehicle_type)
-        else:
+        self.gc.set_placement_vehicle_type(vehicle_type)
+        if self.gc.simulation_status.value != "PLACING_VEHICLE":
             self.gc.spawn_vehicle(vehicle_type)

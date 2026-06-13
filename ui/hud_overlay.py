@@ -3,6 +3,7 @@ from collections.abc import Iterable
 import pygame
 
 from core.simulation_state import SimulationStatus, VehiclePlan
+from core.pathfinding_metrics import AlgorithmMetrics
 from models.enums import AlgorithmType, VehicleType
 from models.map_state import MapState
 from models.vehicle import Vehicle
@@ -47,6 +48,7 @@ def draw_hud(
     active_scenario: str | None = None,
     simulation_speed: float = 1.0,
     step_mode_enabled: bool = False,
+    pathfinding_metrics: dict[str, AlgorithmMetrics] | None = None,
 ) -> None:
     if map_state is None:
         return
@@ -63,4 +65,5 @@ def draw_hud(
         active_scenario,
         simulation_speed,
         step_mode_enabled,
+        pathfinding_metrics,
     )

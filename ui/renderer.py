@@ -4,6 +4,7 @@ import pygame
 
 from config import CELL_SIZE
 from core.simulation_state import SimulationStatus, VehiclePlan
+from core.pathfinding_metrics import METRICS
 from models.enums import VehicleStatus, VehicleType
 from models.guard import Guard
 from models.map_state import MapState
@@ -39,6 +40,13 @@ class Renderer:
         self._background_surface: pygame.Surface | None = None
         self._background_path: str | None = None
         self._sprites = SpriteLoader().load_entity_sprites()
+        self._car_sprite_ids = self._directional_sprite_ids("car_topdown_")
+        self._fallback_car_sprite_keys = self._existing_sprite_keys(["car", "car_alt"])
+        self._motorbike_sprite_ids = self._directional_sprite_ids("motorbike_topdown_")
+        self._fallback_motorbike_sprite_keys = self._sprite_keys_with_fallback(
+            ["motorbike_retro_"],
+            ["motorbike", "motorbike_alt"],
+        )
         self._map_tile_renderer = MapTileRenderer(self.font_small, self._sprites)
         self._world_surface: pygame.Surface | None = None
 
@@ -142,12 +150,10 @@ class Renderer:
             center = self._cell_center(map_state, vehicle.position)
             radius = map_state.tile_size // 2 - 5
             color = status_colors[vehicle.status]
-            sprite_key = self._get_vehicle_sprite_key(vehicle)
-            sprite = self._sprites.get(sprite_key)
+            sprite = self._get_vehicle_sprite(vehicle)
             if sprite is not None:
-                oriented_sprite = self._orient_vehicle_sprite(sprite, vehicle)
-                sprite_rect = oriented_sprite.get_rect(center=center)
-                self.screen.blit(oriented_sprite, sprite_rect)
+                sprite_rect = sprite.get_rect(center=center)
+                self.screen.blit(sprite, sprite_rect)
                 label_text = f"C{vehicle.id}" if vehicle.type.value == "CAR" else f"M{vehicle.id}"
             elif vehicle.type.value == "CAR":
                 rect = pygame.Rect(0, 0, map_state.tile_size - 8, map_state.tile_size - 12)
@@ -169,12 +175,122 @@ class Renderer:
             label_rect = label.get_rect(center=(center[0], y + map_state.tile_size - 7))
             self.screen.blit(label, label_rect)
 
-    def _get_vehicle_sprite_key(self, vehicle: Vehicle) -> str:
+    def _get_vehicle_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
         if vehicle.type.value == "CAR":
-            options = ["car", "car_alt"]
-        else:
-            options = ["motorbike", "motorbike_alt"]
-        return options[vehicle.id % len(options)]
+            return self._get_car_sprite(vehicle)
+        return self._get_motorbike_sprite(vehicle)
+
+    def _get_motorbike_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
+        if self._motorbike_sprite_ids:
+            sprite_id = self._motorbike_sprite_ids[
+                vehicle.id % len(self._motorbike_sprite_ids)
+            ]
+            for direction in self._direction_fallbacks(self._vehicle_direction_name(vehicle)):
+                sprite = self._sprites.get(f"{sprite_id}_{direction}")
+                if sprite is not None:
+                    return sprite
+
+        if not self._fallback_motorbike_sprite_keys:
+            return None
+        sprite_key = self._fallback_motorbike_sprite_keys[
+            vehicle.id % len(self._fallback_motorbike_sprite_keys)
+        ]
+        sprite = self._sprites.get(sprite_key)
+        if sprite is None:
+            return None
+        return self._orient_vehicle_sprite(sprite, vehicle)
+
+    def _get_car_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
+        if self._car_sprite_ids:
+            sprite_id = self._car_sprite_ids[vehicle.id % len(self._car_sprite_ids)]
+            for direction in self._direction_fallbacks(self._vehicle_direction_name(vehicle)):
+                sprite = self._sprites.get(f"{sprite_id}_{direction}")
+                if sprite is not None:
+                    return sprite
+
+        if not self._fallback_car_sprite_keys:
+            return None
+        sprite_key = self._fallback_car_sprite_keys[
+            vehicle.id % len(self._fallback_car_sprite_keys)
+        ]
+        sprite = self._sprites.get(sprite_key)
+        if sprite is None:
+            return None
+        return self._orient_vehicle_sprite(sprite, vehicle)
+
+    def _directional_sprite_ids(self, prefix: str) -> list[str]:
+        suffix = "_east"
+        return sorted(
+            {
+                key[: -len(suffix)]
+                for key in self._sprites
+                if key.startswith(prefix) and key.endswith(suffix)
+            }
+        )
+
+    def _sprite_keys_with_fallback(
+        self,
+        prefixes: list[str],
+        fallback_keys: list[str],
+    ) -> list[str]:
+        keys = sorted(
+            key
+            for key in self._sprites
+            if any(key.startswith(prefix) for prefix in prefixes)
+        )
+        if keys:
+            return keys
+        return [key for key in fallback_keys if key in self._sprites]
+
+    def _existing_sprite_keys(self, keys: list[str]) -> list[str]:
+        return [key for key in keys if key in self._sprites]
+
+    def _vehicle_direction_name(self, vehicle: Vehicle) -> str:
+        if not vehicle.path:
+            return "east"
+
+        first_delta = self._movement_delta(vehicle.position, vehicle.path[0])
+        if len(vehicle.path) > 1:
+            second_delta = self._movement_delta(vehicle.path[0], vehicle.path[1])
+            if first_delta != second_delta:
+                turn_delta = (
+                    first_delta[0] + second_delta[0],
+                    first_delta[1] + second_delta[1],
+                )
+                direction = self._delta_direction_name(turn_delta)
+                if direction is not None:
+                    return direction
+
+        direction = self._delta_direction_name(first_delta)
+        return direction if direction is not None else "east"
+
+    def _movement_delta(
+        self,
+        start: tuple[int, int],
+        end: tuple[int, int],
+    ) -> tuple[int, int]:
+        return end[0] - start[0], end[1] - start[1]
+
+    def _delta_direction_name(self, delta: tuple[int, int]) -> str | None:
+        row_delta, col_delta = delta
+        vertical = "north" if row_delta < 0 else "south" if row_delta > 0 else ""
+        horizontal = "west" if col_delta < 0 else "east" if col_delta > 0 else ""
+        if vertical and horizontal:
+            return f"{vertical}{horizontal}"
+        if vertical:
+            return vertical
+        if horizontal:
+            return horizontal
+        return None
+
+    def _direction_fallbacks(self, direction: str) -> list[str]:
+        fallback_map = {
+            "northeast": ["northeast", "north", "east"],
+            "northwest": ["northwest", "north", "west"],
+            "southeast": ["southeast", "south", "east"],
+            "southwest": ["southwest", "south", "west"],
+        }
+        return fallback_map.get(direction, [direction, "east"])
 
     def _orient_vehicle_sprite(
         self,
@@ -222,7 +338,7 @@ class Renderer:
     def _get_guard_sprite(self, guard: Guard) -> pygame.Surface | None:
         if guard.task == "TRAFFIC":
             sprite = self._sprites.get("guard_point")
-        elif guard.path:
+        elif guard.path or guard.is_walking:
             frames = [
                 self._sprites.get("guard"),
                 self._sprites.get("guard_walk"),
@@ -246,12 +362,12 @@ class Renderer:
         sprite: pygame.Surface,
         guard: Guard,
     ) -> pygame.Surface:
-        if not guard.path:
-            return sprite
-
-        next_cell = guard.path[0]
-        row_delta = next_cell[0] - guard.position[0]
-        col_delta = next_cell[1] - guard.position[1]
+        if guard.path:
+            next_cell = guard.path[0]
+            row_delta = next_cell[0] - guard.position[0]
+            col_delta = next_cell[1] - guard.position[1]
+        else:
+            row_delta, col_delta = guard.facing_delta
         if col_delta < 0:
             return pygame.transform.flip(sprite, True, False)
         if row_delta < 0:
@@ -357,4 +473,5 @@ class Renderer:
             active_scenario,
             simulation_speed,
             step_mode_enabled,
+            METRICS.snapshot(),
         )

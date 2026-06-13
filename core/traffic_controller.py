@@ -86,12 +86,19 @@ class TrafficController:
             if len(candidate_vehicles) > 1:
                 winner = resolve_conflict(candidate_vehicles, target_cell)
                 winner.wait_time = 0.0
-                winner.wait_reason = WaitReason.NONE
-                self._dispatch_traffic_guard(target_cell, map_manager, guards, algorithm)
+                winner.wait_reason = (
+                    WaitReason.EXITING
+                    if winner.wait_reason == WaitReason.EXITING
+                    else WaitReason.NONE
+                )
                 for vehicle in candidate_vehicles:
                     if vehicle != winner:
                         vehicle.status = VehicleStatus.WAITING
-                        vehicle.wait_reason = WaitReason.YIELDING
+                        vehicle.wait_reason = (
+                            WaitReason.EXITING
+                            if vehicle.wait_reason == WaitReason.EXITING
+                            else WaitReason.YIELDING
+                        )
                         vehicle.wait_time += delta_time
 
     def _resolve_head_on_swaps(
@@ -148,7 +155,11 @@ class TrafficController:
                 )
             else:
                 loser.status = VehicleStatus.WAITING
-                loser.wait_reason = WaitReason.GUARD_ESCORT
+                loser.wait_reason = (
+                    WaitReason.EXITING
+                    if loser.wait_reason == WaitReason.EXITING
+                    else WaitReason.YIELDING
+                )
                 loser.wait_time += delta_time
                 winner.wait_time = 0.0
                 winner.wait_reason = (
@@ -157,12 +168,11 @@ class TrafficController:
                     else WaitReason.NONE
                 )
                 Logger.log(
-                    f"[TrafficController] No yield cell: guard holds Vehicle "
+                    f"[TrafficController] No yield cell: Vehicle "
                     f"#{loser.id} aside, Vehicle #{winner.id} goes first"
                 )
             handled.add(vehicle.id)
             handled.add(other.id)
-            self._dispatch_traffic_guard(next_cell, map_manager, guards, algorithm)
 
     def _find_yield_cell(
         self,
@@ -209,7 +219,6 @@ class TrafficController:
 
         if any(vehicle.wait_time >= REROUTE_WAIT_THRESHOLD for vehicle in waiting_vehicles):
             map_manager.add_dynamic_block(intersection)
-            self._dispatch_traffic_guard(intersection, map_manager, guards, algorithm)
             occupied_positions = {
                 other_vehicle.position
                 for other_vehicle in waiting_vehicles
@@ -271,7 +280,7 @@ class TrafficController:
                 if vehicle == winner:
                     vehicle.wait_time = 0.0
             Logger.log(
-                f"[Guard] Vehicle #{winner.id} allowed through "
+                f"[TrafficController] Vehicle #{winner.id} allowed through "
                 f"{intersection} by priority"
             )
 
@@ -325,13 +334,4 @@ class TrafficController:
         guards: list[Guard] | None,
         algorithm: str | AlgorithmType = AlgorithmType.ASTAR,
     ) -> None:
-        if not guards:
-            return
-        guard = next((item for item in guards if item.task == "IDLE"), None)
-        if guard is None:
-            return
-        guard.task = "TRAFFIC"
-        guard.target_position = position
-        guard.path = find_path(algorithm, guard.position, position, map_manager)
-        guard.is_active = True
-        Logger.log(f"[Guard] Guard #{guard.id} dispatched to coordinate {position}")
+        return

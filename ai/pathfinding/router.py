@@ -2,6 +2,7 @@ from ai.pathfinding.astar import astar
 from ai.pathfinding.bfs import bfs
 from ai.pathfinding.dfs import dfs
 from ai.pathfinding.greedy import greedy
+from core.pathfinding_metrics import measure_pathfinding
 from core.map_manager import MapManager
 from models.enums import AlgorithmType
 
@@ -21,7 +22,10 @@ def find_path(
         "astar": astar,
     }
     pathfinder = algorithms[algorithm_name]
-    return pathfinder(start, goal, map_manager, blocked_positions)
+    return measure_pathfinding(
+        algorithm_name,
+        lambda: pathfinder(start, goal, map_manager, blocked_positions),
+    )
 
 
 def normalize_algorithm_name(algorithm: str | AlgorithmType) -> str:

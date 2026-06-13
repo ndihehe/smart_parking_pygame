@@ -2,8 +2,9 @@ from collections.abc import Iterable
 
 import pygame
 
+from core.pathfinding_metrics import AlgorithmMetrics
 from core.simulation_state import SimulationStatus, VehiclePlan
-from models.enums import AlgorithmType, VehicleStatus, VehicleType
+from models.enums import AlgorithmType, VehicleType
 from models.map_state import MapState
 from models.vehicle import Vehicle
 from ui.button import UIButton
@@ -84,6 +85,7 @@ def draw_sidebar(
     active_scenario: str | None,
     simulation_speed: float = 1.0,
     step_mode_enabled: bool = False,
+    pathfinding_metrics: dict[str, AlgorithmMetrics] | None = None,
 ) -> None:
     panel_rect = get_control_panel_rect(screen.get_size(), map_state)
     mouse_pos = pygame.mouse.get_pos()
@@ -124,8 +126,18 @@ def draw_sidebar(
         button.draw(screen, font_small, mouse_pos)
     y += (BUTTON_HEIGHT + BUTTON_GAP) * 8 + 22
 
-    y = _draw_section(screen, font_small, "Status", x, y)
-    y = _draw_status_cards(screen, font, font_small, vehicles, x, y, width)
+    y = _draw_section(screen, font_small, "Algorithm Metrics", x, y)
+    metrics_x = max(panel_rect.left + 12, x - 10)
+    metrics_width = min(panel_rect.right - metrics_x - 12, width + 20)
+    y = _draw_metrics_table(
+        screen,
+        font_small,
+        pathfinding_metrics or {},
+        current_algorithm,
+        metrics_x,
+        y,
+        metrics_width,
+    )
 
     if y + 120 < panel_rect.bottom - 18:
         y = _draw_section(screen, font_small, "Shortcuts", x, y + 12)
@@ -354,30 +366,117 @@ def _draw_section(
     return y + 24
 
 
-def _draw_status_cards(
+def _draw_metrics_table(
     screen: pygame.Surface,
-    font: pygame.font.Font,
     font_small: pygame.font.Font,
-    vehicles: Iterable[Vehicle],
+    metrics_by_algorithm: dict[str, AlgorithmMetrics],
+    current_algorithm: str | AlgorithmType,
     x: int,
     y: int,
     width: int,
 ) -> int:
-    vehicle_list = list(vehicles)
-    stats = [
-        ("Moving", sum(1 for vehicle in vehicle_list if vehicle.status == VehicleStatus.MOVING)),
-        ("Parked", sum(1 for vehicle in vehicle_list if vehicle.status == VehicleStatus.PARKED)),
-        ("Waiting", sum(1 for vehicle in vehicle_list if vehicle.status == VehicleStatus.WAITING)),
+    row_height = 24
+    header_height = 22
+    table_height = header_height + row_height * len(ALGORITHM_BUTTONS)
+    table_rect = pygame.Rect(x, y, width, table_height)
+    pygame.draw.rect(screen, (28, 32, 36), table_rect)
+    pygame.draw.rect(screen, (94, 105, 80), table_rect, 2)
+
+    columns = [
+        ("Alg", 0.02),
+        ("Calls", 0.28),
+        ("Last", 0.43),
+        ("Avg", 0.56),
+        ("Best", 0.68),
+        ("Worst", 0.80),
+        ("KB", 0.90),
+        ("Len", 0.99),
     ]
-    card_height = 34
-    for index, (name, value) in enumerate(stats):
-        rect = pygame.Rect(x, y + index * (card_height + 8), width, card_height)
-        pygame.draw.rect(screen, (35, 39, 43), rect)
-        pygame.draw.rect(screen, (94, 105, 80), rect, 2)
-        screen.blit(font_small.render(name, True, (208, 210, 180)), (rect.left + 10, rect.top + 9))
-        value_text = font.render(str(value), True, (252, 236, 178))
-        screen.blit(value_text, (rect.right - value_text.get_width() - 12, rect.top + 6))
-    return y + len(stats) * (card_height + 8)
+    selected_label = algorithm_label(current_algorithm)
+    _draw_metrics_row(
+        screen,
+        font_small,
+        table_rect,
+        y,
+        columns,
+        ["Alg", "Calls", "Last", "Avg", "Best", "Worst", "KB", "Len"],
+        (160, 175, 145),
+    )
+
+    for index, (label, algorithm) in enumerate(ALGORITHM_BUTTONS):
+        row_y = y + header_height + index * row_height
+        algorithm_key = algorithm.value.lower()
+        metrics = metrics_by_algorithm.get(algorithm_key)
+        if label == selected_label:
+            pygame.draw.rect(
+                screen,
+                (39, 59, 45),
+                pygame.Rect(x + 2, row_y, width - 4, row_height),
+            )
+        values = [
+            _compact_algorithm_label(label),
+            "-" if metrics is None or metrics.runs == 0 else str(metrics.runs),
+            _format_ms(None if metrics is None else metrics.last_time_ms),
+            _format_ms(None if metrics is None else metrics.avg_time_ms),
+            _format_ms(None if metrics is None else metrics.best_time_ms),
+            _format_ms(None if metrics is None else metrics.worst_time_ms),
+            _format_kb(None if metrics is None else metrics.last_memory_kb),
+            "-" if metrics is None or metrics.last_path_length is None else str(metrics.last_path_length),
+        ]
+        color = (252, 236, 178) if label == selected_label else (214, 218, 190)
+        _draw_metrics_row(
+            screen,
+            font_small,
+            table_rect,
+            row_y,
+            columns,
+            values,
+            color,
+        )
+
+    return y + table_height + 8
+
+
+def _draw_metrics_row(
+    screen: pygame.Surface,
+    font: pygame.font.Font,
+    table_rect: pygame.Rect,
+    y: int,
+    columns: list[tuple[str, float]],
+    values: list[str],
+    color: tuple[int, int, int],
+) -> None:
+    for index, value in enumerate(values):
+        _, offset = columns[index]
+        text = font.render(value, True, color)
+        if index == 0:
+            text_x = table_rect.left + 8 + int(table_rect.width * offset)
+        else:
+            column_right = table_rect.left + int(table_rect.width * offset)
+            text_x = column_right - text.get_width()
+        screen.blit(text, (text_x, y + 5))
+
+
+def _compact_algorithm_label(label: str) -> str:
+    return "GRE" if label == "GREEDY" else label
+
+
+def _format_ms(value: float | None) -> str:
+    if value is None:
+        return "-"
+    if value < 1:
+        return f"{value:.2f}"
+    if value < 10:
+        return f"{value:.1f}"
+    return f"{value:.0f}"
+
+
+def _format_kb(value: float | None) -> str:
+    if value is None:
+        return "-"
+    if value < 10:
+        return f"{value:.1f}"
+    return f"{value:.0f}"
 
 
 def _draw_shortcuts(
