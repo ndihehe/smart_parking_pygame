@@ -31,7 +31,7 @@ Hệ thống **không** sử dụng Machine Learning, Deep Learning hay Computer
 | Thư viện chuẩn | `json`, `pathlib`, `collections`, `heapq`, `dataclasses`, `enum`, `unittest` |
 | Assets | Kenney Pixel Vehicle Pack (CC0), TopDown Vehicles v1.17 và retro vehicle sprites — sprite xe, moto, guard, props |
 | Bản đồ | `data/map_layout.json` (ảnh nền + lưới logic), `data/maps/default_map.txt` (định dạng text) |
-| Công cụ phụ | `tools/map_annotator.py` — công cụ Pygame để gán loại ô lên ảnh bản đồ |
+| Công cụ phụ | `tools/map_annotator.py` — công cụ Pygame để gán loại ô lên ảnh bản đồ; `tools/map_layout_viewer.py` — công cụ xem riêng map và các ô đã đánh dấu |
 
 ---
 
@@ -85,14 +85,14 @@ Các chức năng dưới đây đều có trong code hiện tại:
 ### Giao diện
 - **Start Menu** — màn hình mở đầu với nút Play / Exit, nền ảnh và dòng credit.
 - **Hiển thị map bãi đỗ** — lưới 30×40 (map mặc định), ảnh nền `parking_map.png`, tile pseudo-3D hoặc sprite trang trí.
-- **Sidebar điều khiển** — chọn thuật toán, mode, điều khiển mô phỏng và thống kê.
+- **Sidebar điều khiển** — chọn thuật toán, mode, điều khiển mô phỏng và thống kê; tự chuyển sang layout compact khi chiều cao cửa sổ thấp.
 - **Viewport co giãn** — cửa sổ resize được; fullscreen bằng `F11`.
 - **Highlight** — xe được chọn, ô đỗ được gán, đường đi (path dots), vị trí dynamic block.
 
 ### Thuật toán và mô phỏng
 - **Chọn thuật toán** BFS / DFS / Greedy / A* (sidebar hoặc phím `1`–`4`).
-- **Thêm xe** — đặt thủ công bằng `Place Vehicle` (chọn Car/Motorbike rồi click map); hoặc bật auto spawn (`T`) để tự sinh xe ngẫu nhiên tại cổng vào.
-- **Đặt xe thủ công** — chế độ `Place Vehicle`, chọn loại Car/Motorbike và kế hoạch Entering/Exiting, click lên map.
+- **Thêm xe** — bấm Car/Motorbike hoặc phím `C`/`M` khi chưa bật `Place Vehicle` để spawn xe vào bãi; hoặc bật auto spawn (`T`) để tự sinh xe ngẫu nhiên tại cổng vào.
+- **Đặt xe thủ công** — bật `Place Vehicle`, chọn loại Car/Motorbike và kế hoạch Entering/Exiting, click lên map. Nút Entering/Exiting chỉ có hiệu lực trong chế độ `Place Vehicle`.
 - **Traffic Jam Mode** — tạo sẵn 8 xe quanh vùng ngã tư để mô phỏng ùn tắc; trạng thái `READY`, nhấn Enter để chạy.
 - **Reset mô phỏng** — xóa xe, giải phóng slot, reset guard và trạng thái.
 - **Tốc độ mô phỏng** — Normal Speed, Slow View (0.25×), Step Mode (từng bước di chuyển).
@@ -110,7 +110,7 @@ Các chức năng dưới đây đều có trong code hiện tại:
 - Phát hiện ùn tắc tại ngã tư (số xe chờ, thời gian chờ, timer ngã tư).
 - Giải quyết xung đột nhiều xe cùng nhắm một ô (`resolve_conflict`).
 - Reroute khi kẹt quá lâu.
-- **Guard** — chỉ hỗ trợ xử lý vi phạm đỗ sai loại/vị trí và escort xe về luồng hợp lệ; xe kẹt/nhường đường do traffic logic tự xử lý.
+- **Guard** — chỉ hỗ trợ xử lý vi phạm đỗ sai loại/vị trí và escort xe về luồng hợp lệ; nếu xe đã được người dùng đưa về vị trí đỗ hợp lệ thì guard hủy nhiệm vụ cũ và quay về. Xe kẹt/nhường đường do traffic logic tự xử lý.
 
 ### Thống kê và log
 - Sidebar thay phần status cũ bằng bảng **Algorithm Metrics** cho BFS/DFS/Greedy/A*: `Calls`, `Last`, `Avg`, `Best`, `Worst`, `KB`, `Len`.
@@ -197,7 +197,8 @@ Tất cả thuật toán được triển khai trong `ai/pathfinding/`, gọi th
 3. **Vào màn hình mô phỏng** — render map, sidebar; trạng thái ban đầu `IDLE`.
 4. **Chọn thuật toán** — BFS / DFS / Greedy / A*; thuật toán được dùng cho mọi lần tìm đường tiếp theo.
 5. **Thêm / chọn xe**
-   - Đặt thủ công: `Place Vehicle` (sidebar) hoặc phím `C`/`M` (chọn loại Car/Motorbike) → chọn Entering/Exiting → click lên ô hợp lệ trên map.
+   - Spawn nhanh: bấm Car/Motorbike trên sidebar hoặc phím `C`/`M` khi chưa bật `Place Vehicle` để sinh xe vào bãi từ cổng.
+   - Đặt thủ công: bật `Place Vehicle` trên sidebar → chọn loại Car/Motorbike → chọn Entering/Exiting → click lên ô hợp lệ trên map.
    - Auto spawn: phím `T` sinh xe ngẫu nhiên (Car hoặc Motorbike) tại cổng vào mỗi 5 giây.
    - Traffic Jam: tạo 8 xe sẵn quanh ngã tư, trạng thái `READY`.
 6. **Bắt đầu mô phỏng** — nhấn Enter khi trạng thái `READY`; xe Entering được gán slot và tìm đường, xe Exiting được gán lộ trình ra cổng.
@@ -258,7 +259,7 @@ smart_parking_pygame/
 |-- data/                    # map_layout.json va default_map.txt
 |-- assets/                  # Anh map, UI, Kenney sprites
 |-- tests/                   # Unit tests
-|-- tools/                   # map_annotator.py
+|-- tools/                   # map_annotator.py, map_layout_viewer.py
 |-- retro-vechicle-sprites-64x64/ # Asset moto retro nguon
 |-- TopDown Vehicles v1.17/        # Asset xe top-down nguon
 `-- De_xuat/                # Tai lieu de xuat
@@ -328,6 +329,14 @@ python tools/map_annotator.py --tile-size 64
 
 Công cụ cho phép vẽ loại ô lên ảnh nền và lưu ra `data/map_layout.json` (phím `S`).
 
+### Chạy công cụ xem map đã đánh dấu
+
+```bash
+python tools/map_layout_viewer.py
+```
+
+Công cụ này chỉ dùng để kiểm tra ảnh nền và các ô logic trong `data/map_layout.json`; không chạy mô phỏng.
+
 ### Chạy kiểm thử
 
 ```bash
@@ -343,7 +352,7 @@ python -m unittest discover -s tests
 | `Enter` (game, trạng thái READY) | Bắt đầu mô phỏng |
 | `Enter` (xe manual) | Xác nhận đỗ xe |
 | `1` / `2` / `3` / `4` | BFS / DFS / Greedy / A* |
-| `C` / `M` | Chọn Car / Motorbike và vào chế độ đặt xe |
+| `C` / `M` | Chọn Car / Motorbike; nếu chưa ở Place Vehicle thì spawn xe vào bãi |
 | `T` | Bật/tắt auto spawn tại cổng vào |
 | `J` | Traffic Jam Mode |
 | `R` | Reset mô phỏng |

@@ -115,6 +115,8 @@ class MapAnnotator:
 
         self.font = pygame.font.SysFont("consolas", 18, bold=True)
         self.small_font = pygame.font.SysFont("segoeui", 16)
+        if (ROOT_DIR / self.layout_path).exists():
+            self.load_layout()
 
     def _load_background(self) -> pygame.Surface:
         absolute_path = ROOT_DIR / self.image_path
