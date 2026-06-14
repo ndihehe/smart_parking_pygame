@@ -261,12 +261,13 @@ def _control_buttons(
     button_gap: int,
 ) -> list[UIButton]:
     half_width = (width - button_gap) // 2
+    placement_mode = simulation_status == SimulationStatus.PLACING_VEHICLE
     return [
         UIButton(
             ACTION_PLACE,
             "Place Vehicle",
             pygame.Rect(x, y, width, button_height),
-            selected=simulation_status == SimulationStatus.PLACING_VEHICLE,
+            selected=placement_mode,
         ),
         UIButton(
             ACTION_TYPE_CAR,
@@ -290,6 +291,7 @@ def _control_buttons(
             "Entering",
             pygame.Rect(x, y + (button_height + button_gap) * 2, half_width, button_height),
             selected=placement_plan == VehiclePlan.ENTERING,
+            enabled=placement_mode,
         ),
         UIButton(
             ACTION_PLAN_EXITING,
@@ -301,6 +303,7 @@ def _control_buttons(
                 button_height,
             ),
             selected=placement_plan == VehiclePlan.EXITING,
+            enabled=placement_mode,
         ),
         UIButton(
             ACTION_RESET,
