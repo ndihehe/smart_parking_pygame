@@ -17,10 +17,11 @@ class PygameApp:
     def __init__(self, map_filepath: str) -> None:
         pygame.init()
         display_info = pygame.display.Info()
-        initial_size = (
-            max(display_info.current_w, WINDOW_WIDTH),
-            max(display_info.current_h, WINDOW_HEIGHT),
+        initial_size = self._fit_window_size(
+            (WINDOW_WIDTH, WINDOW_HEIGHT),
+            (display_info.current_w, display_info.current_h),
         )
+        self.windowed_size = initial_size
         self.screen = pygame.display.set_mode(initial_size, pygame.RESIZABLE)
         pygame.display.set_caption(WINDOW_TITLE)
         if hasattr(pygame.display, "set_allow_screensaver"):
@@ -39,17 +40,17 @@ class PygameApp:
             delta_time = self.clock.tick(FPS) / 1000.0
             events = pygame.event.get()
             for event in events:
-                if event.type == pygame.VIDEORESIZE:
-                    width = max(event.w, MIN_WINDOW_WIDTH)
-                    height = max(event.h, MIN_WINDOW_HEIGHT)
-                    self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+                if event.type == pygame.VIDEORESIZE and not self.fullscreen:
+                    self.windowed_size = event.size
+                    self.screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
                     self.renderer.screen = self.screen
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
                     self.fullscreen = not self.fullscreen
                     if self.fullscreen:
-                        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                        self.windowed_size = self.screen.get_size()
+                        self.screen = pygame.display.set_mode(self._display_size(), pygame.FULLSCREEN)
                     else:
-                        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
+                        self.screen = pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
                     self.renderer.screen = self.screen
 
             if self.scene == "MENU":
@@ -83,3 +84,21 @@ class PygameApp:
                 )
             pygame.display.flip()
         pygame.quit()
+
+    def _display_size(self) -> tuple[int, int]:
+        display_info = pygame.display.Info()
+        return display_info.current_w, display_info.current_h
+
+    def _fit_window_size(
+        self,
+        requested_size: tuple[int, int],
+        display_size: tuple[int, int],
+    ) -> tuple[int, int]:
+        display_width, display_height = display_size
+        max_width = max(640, display_width - 80)
+        max_height = max(480, display_height - 120)
+        min_width = min(MIN_WINDOW_WIDTH, max_width)
+        min_height = min(MIN_WINDOW_HEIGHT, max_height)
+        width = min(max(requested_size[0], min_width), max_width)
+        height = min(max(requested_size[1], min_height), max_height)
+        return width, height
