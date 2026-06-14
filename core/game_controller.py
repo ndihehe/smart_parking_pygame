@@ -325,6 +325,7 @@ class GameController:
                 vehicle.position,
                 self.map_manager.get_state(),
             )
+            self._clear_vehicle_violation_response(vehicle)
             Logger.log(
                 f"[GameController] Vehicle #{vehicle.id} parking accepted: {result}"
             )
@@ -406,11 +407,14 @@ class GameController:
     def _clear_manual_violation(self, vehicle: Vehicle) -> None:
         if vehicle.position in self.map_manager.get_state().dynamic_blocks:
             self.map_manager.remove_dynamic_block(vehicle.position)
+        self._clear_vehicle_violation_response(vehicle)
+
+    def _clear_vehicle_violation_response(self, vehicle: Vehicle) -> None:
         for guard in self.guards:
             if guard.task == "VIOLATION" and guard.target_vehicle_id == vehicle.id:
                 Logger.log(
                     f"[Guard] Guard #{guard.id} cancelled violation escort for "
-                    f"Vehicle #{vehicle.id}; manual mode cleared"
+                    f"Vehicle #{vehicle.id}; violation cleared"
                 )
                 self._return_guard_home(guard)
 
@@ -1169,6 +1173,26 @@ class GameController:
             return
 
         has_active_block = vehicle.position in self.map_manager.get_state().dynamic_blocks
+        if vehicle.status == VehicleStatus.PARKED:
+            Logger.log(
+                f"[Guard] Guard #{guard.id} cancelled violation escort for "
+                f"Vehicle #{vehicle.id}; vehicle already parked"
+            )
+            self._return_guard_home(guard)
+            return
+
+        if (
+            guard.target_position is not None
+            and guard.target_position != vehicle.position
+            and not has_active_block
+        ):
+            Logger.log(
+                f"[Guard] Guard #{guard.id} cancelled stale violation escort for "
+                f"Vehicle #{vehicle.id}"
+            )
+            self._return_guard_home(guard)
+            return
+
         if (
             vehicle.status == VehicleStatus.MANUAL
             and not has_active_block
