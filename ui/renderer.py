@@ -42,7 +42,7 @@ class Renderer:
         self._fallback_car_sprite_keys = self._existing_sprite_keys(["car", "car_alt"])
         self._motorbike_sprite_ids = self._directional_sprite_ids("motorbike_topdown_")
         self._fallback_motorbike_sprite_keys = self._sprite_keys_with_fallback(
-            ["motorbike_retro_"],
+            [],
             ["motorbike", "motorbike_alt"],
         )
         self._map_tile_renderer = MapTileRenderer(self.font_small, self._sprites)
@@ -179,21 +179,21 @@ class Renderer:
         return self._get_motorbike_sprite(vehicle)
 
     def _get_motorbike_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
-        if self._motorbike_sprite_ids:
-            sprite_id = self._motorbike_sprite_ids[
-                vehicle.id % len(self._motorbike_sprite_ids)
-            ]
+        sprite_options = (
+            [("directional", sprite_id) for sprite_id in self._motorbike_sprite_ids]
+            + [("oriented", sprite_key) for sprite_key in self._fallback_motorbike_sprite_keys]
+        )
+        if not sprite_options:
+            return None
+
+        sprite_type, sprite_id = sprite_options[vehicle.id % len(sprite_options)]
+        if sprite_type == "directional":
             for direction in self._direction_fallbacks(self._vehicle_direction_name(vehicle)):
                 sprite = self._sprites.get(f"{sprite_id}_{direction}")
                 if sprite is not None:
                     return sprite
 
-        if not self._fallback_motorbike_sprite_keys:
-            return None
-        sprite_key = self._fallback_motorbike_sprite_keys[
-            vehicle.id % len(self._fallback_motorbike_sprite_keys)
-        ]
-        sprite = self._sprites.get(sprite_key)
+        sprite = self._sprites.get(sprite_id)
         if sprite is None:
             return None
         return self._orient_vehicle_sprite(sprite, vehicle)
@@ -234,7 +234,7 @@ class Renderer:
         keys = sorted(
             key
             for key in self._sprites
-            if any(key.startswith(prefix) for prefix in prefixes)
+            if prefixes and any(key.startswith(prefix) for prefix in prefixes)
         )
         if keys:
             return keys
