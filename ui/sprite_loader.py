@@ -1,5 +1,5 @@
+import hashlib
 import os
-import re
 from pathlib import Path
 
 import pygame
@@ -201,14 +201,17 @@ class SpriteLoader:
             relative_path = source_path.relative_to(PROJECT_ROOT)
         except ValueError:
             pass
-        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(relative_path))
+        cache_key = hashlib.sha1(str(relative_path).encode("utf-8")).hexdigest()[:12]
+        safe_stem = source_path.stem[:32]
         flags = []
         if remove_light_background:
             flags.append("bg")
         if flip_horizontal:
             flags.append("flip")
         flag_label = "_".join(flags) if flags else "plain"
-        return SPRITE_CACHE_ROOT / f"{safe_name}_{max_width}x{max_height}_{flag_label}.png"
+        return SPRITE_CACHE_ROOT / (
+            f"{safe_stem}_{cache_key}_{max_width}x{max_height}_{flag_label}.png"
+        )
 
     def _trim_transparent(self, sprite: pygame.Surface) -> pygame.Surface:
         bounds = sprite.get_bounding_rect(min_alpha=1)
