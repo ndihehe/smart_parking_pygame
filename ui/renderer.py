@@ -39,12 +39,9 @@ class Renderer:
         self._background_path: str | None = None
         self._sprites = SpriteLoader().load_entity_sprites()
         self._car_sprite_ids = self._directional_sprite_ids("car_topdown_")
-        self._fallback_car_sprite_keys = self._existing_sprite_keys(["car", "car_alt"])
+        self._fallback_car_sprite_keys: list[str] = []
         self._motorbike_sprite_ids = self._directional_sprite_ids("motorbike_topdown_")
-        self._fallback_motorbike_sprite_keys = self._sprite_keys_with_fallback(
-            [],
-            ["motorbike", "motorbike_alt"],
-        )
+        self._fallback_motorbike_sprite_keys: list[str] = []
         self._map_tile_renderer = MapTileRenderer(self.font_small, self._sprites)
         self._world_surface: pygame.Surface | None = None
 

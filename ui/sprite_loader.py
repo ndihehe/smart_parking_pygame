@@ -41,18 +41,6 @@ class SpriteLoader:
             return self._sprites
 
         specs = {
-            "car": (os.path.join("cars", "car.png"), CELL_SIZE - 4, CELL_SIZE - 10),
-            "car_alt": (os.path.join("cars", "car_alt.png"), CELL_SIZE - 4, CELL_SIZE - 10),
-            "motorbike": (
-                os.path.join("cars", "motorbike.png"),
-                CELL_SIZE - 8,
-                CELL_SIZE - 14,
-            ),
-            "motorbike_alt": (
-                os.path.join("cars", "motorbike_alt.png"),
-                CELL_SIZE - 8,
-                CELL_SIZE - 14,
-            ),
             "guard": (
                 os.path.join("characters", "guard.png"),
                 CELL_SIZE - 12,
