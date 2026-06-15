@@ -148,16 +148,16 @@ class VehicleManager:
                                 f"arrived at {vehicle.position}"
                             )
                     else:
-                        vehicle.status = VehicleStatus.REROUTING
-                        vehicle.wait_reason = (
-                            WaitReason.EXITING
-                            if is_exiting
-                            else (
-                                WaitReason.BLOCKED_BY_VEHICLE
-                                if blocked_by_vehicle
+                        if blocked_by_vehicle and not is_exiting:
+                            vehicle.status = VehicleStatus.WAITING
+                            vehicle.wait_reason = WaitReason.YIELDING
+                        else:
+                            vehicle.status = VehicleStatus.REROUTING
+                            vehicle.wait_reason = (
+                                WaitReason.EXITING
+                                if is_exiting
                                 else WaitReason.BLOCKED_BY_OBSTACLE
                             )
-                        )
                         Logger.log(
                             f"[VehicleManager] Vehicle #{vehicle.id} blocked at "
                             f"{next_cell}, set to {vehicle.status.value}"

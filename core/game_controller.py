@@ -538,7 +538,8 @@ class GameController:
             self.vehicle_manager.set_path(vehicle.id, path)
             self.vehicle_manager.set_status(vehicle.id, VehicleStatus.MOVING)
             Logger.log(
-                f"[GameController] Vehicle #{vehicle.id} path found via A*, "
+                f"[GameController] Vehicle #{vehicle.id} path found via "
+                f"{self.current_algorithm.upper()}, "
                 f"length={len(path)}"
             )
         else:
@@ -1185,6 +1186,10 @@ class GameController:
             guard.target_position is not None
             and guard.target_position != vehicle.position
             and not has_active_block
+            and not (
+                vehicle.status == VehicleStatus.MANUAL
+                and vehicle.wait_time >= MANUAL_ENFORCE_THRESHOLD
+            )
         ):
             Logger.log(
                 f"[Guard] Guard #{guard.id} cancelled stale violation escort for "
