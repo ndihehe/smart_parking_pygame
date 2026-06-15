@@ -260,8 +260,7 @@ smart_parking_pygame/
 |-- tests/                   # Unit tests
 |-- tools/                   # map_annotator.py, map_layout_viewer.py
 |-- retro-vechicle-sprites-64x64/ # Asset moto retro nguồn
-|-- TopDown Vehicles v1.17/        # Asset xe top-down nguồn
-`-- De_xuat/                # Tài liệu đề xuất
+`-- TopDown Vehicles v1.17/        # Asset xe top-down nguồn
 ```
 
 ### Loại ô trên bản đồ
