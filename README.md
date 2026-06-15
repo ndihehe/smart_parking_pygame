@@ -29,7 +29,7 @@ Hệ thống **không** sử dụng Machine Learning, Deep Learning hay Computer
 | Ngôn ngữ | Python 3 (khuyến nghị Python 3.11 trở lên; dự án đã kiểm thử với Python 3.13) |
 | Thư viện chính | [Pygame](https://www.pygame.org/) `>= 2.6.0` (dependency duy nhất trong `requirements.txt`) |
 | Thư viện chuẩn | `json`, `pathlib`, `collections`, `heapq`, `dataclasses`, `enum`, `unittest` |
-| Assets | Kenney Pixel Vehicle Pack (CC0) và sprite xe máy trong `assets/vehicles/motorbikes` |
+| Assets | Kenney Pixel Vehicle Pack (CC0), sprite ô tô trong `assets/vehicles/cars` và sprite xe máy trong `assets/vehicles/motorbikes` |
 | Bản đồ | `data/map_layout.json` (ảnh nền + lưới logic), `data/maps/default_map.txt` (định dạng text) |
 | Công cụ phụ | `tools/map_annotator.py` — công cụ Pygame để gán loại ô lên ảnh bản đồ; `tools/map_layout_viewer.py` — công cụ xem riêng map và các ô đã đánh dấu |
 
@@ -256,7 +256,7 @@ smart_parking_pygame/
 |
 |-- utils/                   # Grid utils, logger, debug
 |-- data/                    # map_layout.json và default_map.txt
-|-- assets/                  # Ảnh map, UI, Kenney sprites, moto sprites
+|-- assets/                  # Ảnh map, UI, Kenney sprites, car/moto sprites
 |-- tests/                   # Unit tests
 |-- tools/                   # map_annotator.py, map_layout_viewer.py
 ```
@@ -373,4 +373,4 @@ Sidebar cung cấp thêm các nút tương ứng: chọn thuật toán, Place Ve
 
 ## License assets
 
-Sprite trong `assets/kenney_pixel_vehicle_pack/` thuộc **Kenney Pixel Vehicle Pack**, license **CC0**. Sprite xe máy dùng khi mô phỏng nằm trong `assets/vehicles/motorbikes/`; cần giữ đúng license đi kèm asset nếu phân phối lại.
+Sprite trong `assets/kenney_pixel_vehicle_pack/` thuộc **Kenney Pixel Vehicle Pack**, license **CC0**. Sprite ô tô/xe máy dùng khi mô phỏng nằm trong `assets/vehicles/`; cần giữ đúng license đi kèm asset nếu phân phối lại.

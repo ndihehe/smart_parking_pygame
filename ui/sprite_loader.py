@@ -9,9 +9,10 @@ from config import CELL_SIZE
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 KENNEY_ASSET_ROOT = PROJECT_ROOT / "assets" / "kenney_pixel_vehicle_pack"
+CAR_ASSET_ROOT = PROJECT_ROOT / "assets" / "vehicles" / "cars"
 MOTORBIKE_ASSET_ROOT = PROJECT_ROOT / "assets" / "vehicles" / "motorbikes"
 SPRITE_CACHE_ROOT = PROJECT_ROOT / "assets" / "generated" / "sprite_cache"
-MOTORBIKE_DIRECTIONS = (
+VEHICLE_DIRECTIONS = (
     "east",
     "west",
     "north",
@@ -104,8 +105,28 @@ class SpriteLoader:
             if sprite is not None:
                 self._sprites[key] = sprite
 
+        self._load_car_frame_sprites()
         self._load_motorbike_frame_sprites()
         return self._sprites
+
+    def _load_car_frame_sprites(self) -> None:
+        if not CAR_ASSET_ROOT.exists():
+            return
+
+        variants = [
+            path
+            for path in sorted(CAR_ASSET_ROOT.iterdir())
+            if path.is_dir()
+        ]
+        for index, variant_path in enumerate(variants):
+            for direction in VEHICLE_DIRECTIONS:
+                sprite = self._load_scaled_from_path(
+                    variant_path / f"{direction}.png",
+                    CELL_SIZE - 2,
+                    CELL_SIZE - 4,
+                )
+                if sprite is not None:
+                    self._sprites[f"car_topdown_{index:03d}_{direction}"] = sprite
 
     def _load_motorbike_frame_sprites(self) -> None:
         if not MOTORBIKE_ASSET_ROOT.exists():
@@ -118,7 +139,7 @@ class SpriteLoader:
         ]
         for index, variant_path in enumerate(variants):
             flip_flags = MOTORBIKE_FRAME_SPECS.get(variant_path.name, {})
-            for direction in MOTORBIKE_DIRECTIONS:
+            for direction in VEHICLE_DIRECTIONS:
                 sprite = self._load_scaled_from_path(
                     variant_path / f"{direction}.png",
                     CELL_SIZE - 4,
