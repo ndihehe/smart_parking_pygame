@@ -1,8 +1,8 @@
-﻿# Smart Parking Simulation
+﻿# Smart Parking Simulator
 
 ## 1. Giới thiệu dự án
 
-**Smart Parking Simulation** là dự án mô phỏng hệ thống bãi đỗ xe thông minh trên bản đồ lưới 2D. Xe (ô tô và xe máy) vào bãi qua cổng, được gán ô đỗ phù hợp, tìm đường di chuyển và có thể rời bãi qua cổng ra.
+**Smart Parking Simulator** là dự án mô phỏng hệ thống bãi đỗ xe thông minh trên bản đồ lưới 2D. Xe (ô tô và xe máy) vào bãi qua cổng, được gán ô đỗ phù hợp, tìm đường di chuyển và có thể rời bãi qua cổng ra.
 
 Dự án áp dụng các thuật toán tìm kiếm trong trí tuệ nhân tạo (BFS, DFS, Greedy Best-First Search, A*) để tìm đường và điều phối xe. Giao diện được xây dựng bằng **Python** và **Pygame**, hiển thị bản đồ pixel art, sprite xe/guard và panel điều khiển bên cạnh.
 
@@ -26,11 +26,11 @@ Hệ thống **không** sử dụng Machine Learning, Deep Learning hay Computer
 
 | Thành phần | Chi tiết |
 |---|---|
-| Ngôn ngữ | Python 3 (khuyến nghị Python 3.11 trở lên; dự án đã kiểm thử với Python 3.13) |
+| Ngôn ngữ | Python 3.13 (trạng thái hiện tại đã kiểm thử với Python 3.13.1) |
 | Thư viện chính | [Pygame](https://www.pygame.org/) `>= 2.6.0` (dependency duy nhất trong `requirements.txt`) |
 | Thư viện chuẩn | `json`, `pathlib`, `collections`, `heapq`, `dataclasses`, `enum`, `unittest` |
-| Assets | Kenney Pixel Vehicle Pack (CC0), sprite ô tô trong `assets/vehicles/cars` và sprite xe máy trong `assets/vehicles/motorbikes` |
-| Bản đồ | `data/map_layout.json` (ảnh nền + lưới logic), `data/maps/default_map.txt` (định dạng text) |
+| Assets | Kenney Pixel Vehicle Pack (CC0), sprite xe trong `assets/vehicles` và tile map trong `assets/maps` |
+| Bản đồ | Map 20×20 trong `data/map_layout.json` và `data/maps/default_map.txt` |
 | Công cụ phụ | `tools/map_annotator.py` — công cụ Pygame để gán loại ô lên ảnh bản đồ; `tools/map_layout_viewer.py` — công cụ xem riêng map và các ô đã đánh dấu |
 
 ---
@@ -84,15 +84,16 @@ Các chức năng dưới đây đều có trong code hiện tại:
 
 ### Giao diện
 - **Start Menu** — màn hình mở đầu với nút Play / Exit, nền ảnh và dòng credit.
-- **Hiển thị map bãi đỗ** — lưới 30×40 (map mặc định), ảnh nền `parking_map.png`, tile pseudo-3D hoặc sprite trang trí.
-- **Sidebar điều khiển** — chọn thuật toán, mode, điều khiển mô phỏng và thống kê; tự chuyển sang layout compact khi chiều cao cửa sổ thấp.
+- **Hiển thị map bãi đỗ** — lưới 20×20, ảnh nền `parking_map_20x20.png` được ghép từ tile trong `assets/maps`.
+- **Sidebar điều khiển** — ba tab `Simulation`, `Add Vehicle`, `Scenarios`; bảng thống kê thuật toán luôn được giữ lại khi đổi tab.
 - **Viewport co giãn** — cửa sổ resize được; fullscreen bằng `F11`.
-- **Highlight** — xe được chọn, ô đỗ được gán, đường đi (path dots), vị trí dynamic block.
+- **Highlight** — khung xanh lá cho xe đỗ đúng, khung đỏ cho xe vi phạm và khung xanh dương cho xe đang được chọn.
+- **Ngày/đêm** — chuyển chế độ bằng sidebar; trụ đèn và đèn pha xe tạo vùng sáng mềm theo phong cách pixel 2D.
 
 ### Thuật toán và mô phỏng
 - **Chọn thuật toán** BFS / DFS / Greedy / A* (sidebar hoặc phím `1`–`4`).
-- **Thêm xe** — bấm Car/Motorbike hoặc phím `C`/`M` khi chưa bật `Place Vehicle` để spawn xe vào bãi; hoặc bật auto spawn (`T`) để tự sinh xe ngẫu nhiên tại cổng vào.
-- **Đặt xe thủ công** — bật `Place Vehicle`, chọn loại Car/Motorbike và kế hoạch Entering/Exiting, click lên map. Nút Entering/Exiting chỉ có hiệu lực trong chế độ `Place Vehicle`.
+- **Thêm xe** — bấm Car/Motorbike hoặc phím `C`/`M` khi chưa bật chế độ đặt xe để spawn xe vào bãi; hoặc bật auto spawn (`T`) để tự sinh xe tại cổng vào mỗi 2 giây.
+- **Đặt xe thủ công** — bấm `Place on Map`, chọn loại Car/Motorbike và kế hoạch Entering/Exiting rồi click lên map. Có thể đặt nhiều xe liên tiếp; bấm `Finish Placement` để kết thúc. Lựa chọn Exiting chỉ hoạt động khi đang đặt xe.
 - **Traffic Jam Mode** — tạo sẵn 8 xe quanh vùng ngã tư để mô phỏng ùn tắc; trạng thái `READY`, nhấn Enter để chạy.
 - **Reset mô phỏng** — xóa xe, giải phóng slot, reset guard và trạng thái.
 - **Tốc độ mô phỏng** — Normal Speed, Slow View (0.25×), Step Mode (từng bước di chuyển).
@@ -104,7 +105,7 @@ Các chức năng dưới đây đều có trong code hiện tại:
 - Xe vào qua cổng trái, ra qua cổng phải.
 - **Manual mode** — click trái chọn xe; điều khiển bằng `W/A/S/D` hoặc phím mũi tên; Enter xác nhận đỗ; ESC hủy chọn.
 - **Rời bãi** — click phải vào xe hoặc đặt xe với plan Exiting.
-- **Tandem exit** — xử lý xe máy đỗ nối đuôi (inner/outer slot).
+- **Tandem parking/exit** — hỗ trợ cả ô tô và xe máy đỗ hai hàng; guard di chuyển xe ngoài khi cần mở đường cho xe trong rời bãi.
 
 ### Giao thông và guard
 - Phát hiện ùn tắc tại ngã tư (số xe chờ, thời gian chờ, timer ngã tư).
@@ -113,12 +114,13 @@ Các chức năng dưới đây đều có trong code hiện tại:
 - **Guard** — chỉ hỗ trợ xử lý vi phạm đỗ sai loại/vị trí và escort xe về luồng hợp lệ; nếu xe đã được người dùng đưa về vị trí đỗ hợp lệ thì guard hủy nhiệm vụ cũ và quay về. Xe kẹt/nhường đường do traffic logic tự xử lý.
 
 ### Thống kê và log
-- Sidebar thay phần status cũ bằng bảng **Algorithm Metrics** cho BFS/DFS/Greedy/A*: `Calls`, `Last`, `Avg`, `Best`, `Worst`, `KB`, `Len`.
+- Sidebar có bảng **Algorithm Metrics** cho BFS/DFS/Greedy/A*: `Calls`, `Last`, `Avg`, `Best`, `Worst`, `KB`, `Len`.
+- Hai biểu đồ `AVG MS` và `LAST KB` so sánh thời gian trung bình và bộ nhớ gần nhất; cột thấp hơn biểu thị kết quả tốt hơn.
 - Overlay góc trái khi chọn xe: id, type, status, wait reason, vị trí, slot, độ dài path.
 - Log sự kiện in ra **console** qua `Logger` (không có panel log trên màn hình game). Metrics thuật toán được lưu trong RAM đến khi tắt chương trình.
 
 ### Kiểm thử
-- Unit test cho map manager, parking manager, pathfinding, traffic controller trong thư mục `tests/`.
+- Có 53 unit test cho map, parking, pathfinding, traffic, guard và luồng xe rời bãi trong thư mục `tests/`.
 
 ---
 
@@ -176,14 +178,14 @@ Tất cả thuật toán được triển khai trong `ai/pathfinding/`, gọi th
        │                      ┌──────────────────┐
        │                      │  Thiết lập xe    │
        │                      │  - Spawn C/M/T   │
-       │                      │  - Place Vehicle │
+       │                      │  - Place on Map  │
        │                      │  - Traffic Jam   │
        │                      └────────┬─────────┘
        │                               │ Enter (nếu READY)
        │                               ▼
        │                      ┌──────────────────┐
        │                      │  RUNNING         │
-       │                      │  Game loop 30 FPS│
+       │                      │  Game loop 60 FPS│
        │                      └────────┬─────────┘
        │                               │
        └───────────────────────────────┘
@@ -197,15 +199,15 @@ Tất cả thuật toán được triển khai trong `ai/pathfinding/`, gọi th
 3. **Vào màn hình mô phỏng** — render map, sidebar; trạng thái ban đầu `IDLE`.
 4. **Chọn thuật toán** — BFS / DFS / Greedy / A*; thuật toán được dùng cho mọi lần tìm đường tiếp theo.
 5. **Thêm / chọn xe**
-   - Spawn nhanh: bấm Car/Motorbike trên sidebar hoặc phím `C`/`M` khi chưa bật `Place Vehicle` để sinh xe vào bãi từ cổng.
-   - Đặt thủ công: bật `Place Vehicle` trên sidebar → chọn loại Car/Motorbike → chọn Entering/Exiting → click lên ô hợp lệ trên map.
-   - Auto spawn: phím `T` sinh xe ngẫu nhiên (Car hoặc Motorbike) tại cổng vào mỗi 5 giây.
+   - Spawn nhanh: bấm Car/Motorbike trên sidebar hoặc phím `C`/`M` khi chưa bật chế độ đặt xe để sinh xe vào bãi từ cổng.
+   - Đặt thủ công: bấm `Place on Map` → chọn loại Car/Motorbike → chọn Entering/Exiting → click một hoặc nhiều ô hợp lệ → bấm `Finish Placement`.
+   - Auto spawn: phím `T` sinh xe ngẫu nhiên (Car hoặc Motorbike) tại cổng vào mỗi 2 giây.
    - Traffic Jam: tạo 8 xe sẵn quanh ngã tư, trạng thái `READY`.
 6. **Bắt đầu mô phỏng** — nhấn Enter khi trạng thái `READY`; xe Entering được gán slot và tìm đường, xe Exiting được gán lộ trình ra cổng.
 7. **Tìm đường** — `ParkingManager.find_slot()` chọn slot; `find_path()` (router) tính path; slot được reserve.
-8. **Xe di chuyển** — `VehicleManager` di chuyển từng ô mỗi `VEHICLE_MOVE_INTERVAL` (0.3s); `TrafficController` xử lý xung đột và ùn tắc.
+8. **Xe di chuyển** — `VehicleManager` cập nhật bước di chuyển mỗi `VEHICLE_MOVE_INTERVAL` (0,18 giây) và renderer nội suy hình ảnh ở 60 FPS; `TrafficController` xử lý xung đột và ùn tắc.
 9. **Cập nhật trạng thái** — xe chuyển `MOVING` → `ARRIVED` → `PARKED`; hoặc `WAITING` / `REROUTING` khi bị chặn; guard can thiệp khi vi phạm.
-10. **Reset hoặc kịch bản khác** — Reset xóa toàn bộ; Traffic Jam hoặc Place Vehicle để thử tình huống mới; quay Main Menu khi cần.
+10. **Reset hoặc kịch bản khác** — Reset xóa toàn bộ; dùng tab Scenarios hoặc Add Vehicle để thử tình huống mới; quay Main Menu khi cần.
 
 ---
 
@@ -273,6 +275,9 @@ smart_parking_pygame/
 | `P` | Ô đỗ chung |
 | `C` | Ô đỗ ô tô |
 | `M` | Ô đỗ xe máy |
+| `T` | Cây |
+| `L` | Trụ đèn đường |
+| `.` | Ô trống/cỏ |
 
 ---
 
@@ -280,7 +285,7 @@ smart_parking_pygame/
 
 ### Yêu cầu
 
-- Python 3.11+ (khuyến nghị 3.13 nếu dùng Windows launcher `py`)
+- Python 3.13
 - pip
 
 ### Cài đặt
@@ -290,7 +295,7 @@ smart_parking_pygame/
 cd smart_parking_pygame
 
 # (Tuỳ chọn) Tạo môi trường ảo
-python -m venv .venv
+py -3.13 -m venv .venv
 
 # Windows
 .venv\Scripts\activate
@@ -308,19 +313,13 @@ pip install -r requirements.txt
 py -3.13 main.py
 ```
 
-Nếu interpreter mặc định đã cài Pygame, cũng có thể chạy:
-
-```bash
-python main.py
-```
-
 ### Chạy công cụ gán map
 
 Từ thư mục gốc dự án:
 
 ```bash
-python tools/map_annotator.py
-python tools/map_annotator.py --tile-size 64
+py -3.13 tools/map_annotator.py
+py -3.13 tools/map_annotator.py --tile-size 64
 ```
 
 Công cụ cho phép vẽ loại ô lên ảnh nền và lưu ra `data/map_layout.json` (phím `S`).
@@ -328,7 +327,7 @@ Công cụ cho phép vẽ loại ô lên ảnh nền và lưu ra `data/map_layou
 ### Chạy công cụ xem map đã đánh dấu
 
 ```bash
-python tools/map_layout_viewer.py
+py -3.13 tools/map_layout_viewer.py
 ```
 
 Công cụ này chỉ dùng để kiểm tra ảnh nền và các ô logic trong `data/map_layout.json`; không chạy mô phỏng.
@@ -336,8 +335,8 @@ Công cụ này chỉ dùng để kiểm tra ảnh nền và các ô logic trong
 ### Chạy kiểm thử
 
 ```bash
-python -m compileall -q .
-python -m unittest discover -s tests
+py -3.13 -m compileall -q .
+py -3.13 -m unittest discover -s tests -v
 ```
 
 ### Phím tắt trong game
@@ -348,7 +347,7 @@ python -m unittest discover -s tests
 | `Enter` (game, trạng thái READY) | Bắt đầu mô phỏng |
 | `Enter` (xe manual) | Xác nhận đỗ xe |
 | `1` / `2` / `3` / `4` | BFS / DFS / Greedy / A* |
-| `C` / `M` | Chọn Car / Motorbike; nếu chưa ở Place Vehicle thì spawn xe vào bãi |
+| `C` / `M` | Chọn Car / Motorbike; nếu chưa ở chế độ đặt xe thì spawn xe vào bãi |
 | `T` | Bật/tắt auto spawn tại cổng vào |
 | `J` | Traffic Jam Mode |
 | `R` | Reset mô phỏng |
@@ -360,16 +359,16 @@ python -m unittest discover -s tests
 | `W/A/S/D` hoặc mũi tên | Di chuyển xe manual |
 | `Esc` | Bỏ chọn xe |
 
-Sidebar cung cấp thêm các nút tương ứng: chọn thuật toán, Place Vehicle, Reset, tốc độ, Step Mode, Main Menu.
+Sidebar cung cấp ba tab chức năng, nút `Place on Map` / `Finish Placement`, lựa chọn tốc độ, Step Mode, chế độ ngày/đêm, Reset và Main Menu.
 
 ---
 
 ## Giới hạn hiện tại
 
-- Xe di chuyển theo từng ô (discrete step), chưa có animation nội suy mượt giữa các cell.
+- Logic di chuyển vẫn dựa trên lưới rời rạc; phần hình ảnh được nội suy giữa các ô để chuyển động mượt hơn.
 - Logic ùn tắc và reroute ở mức rule-based; guard không còn điều phối traffic mà chỉ xử lý vi phạm đỗ xe.
 - Log chỉ hiển thị trên console, chưa có panel log trong UI game.
-- Map mặc định 30×40; map text `default_map.txt` là 20×32 — kích thước phụ thuộc file được load.
+- Map mặc định hiện được thiết kế cố định ở kích thước 20×20.
 
 ## License assets
 
