@@ -14,4 +14,11 @@ class Vehicle:
     wait_time: float = 0.0
     priority_score: float = 0.0
     direction: str = "STRAIGHT"
+    heading: str = "east"
     wait_reason: WaitReason = WaitReason.NONE
+    render_from: tuple[int, int] | None = None
+    render_progress: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.render_from is None:
+            self.render_from = self.position

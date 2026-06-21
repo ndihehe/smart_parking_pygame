@@ -1,20 +1,20 @@
-G R R R I R R R R I R R R R I R R R R I R R R R I R R R R I R G
-R X X R R R R R R R R R R R R R R R R R R R R R R R R R R X X R
-R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
-R R X R R R R R R R R R R R R R R R R R R R R R R R R R R X R R
-R R R R R R C C C C C C C C C C C C C C C C C C C C R R R R R R
-R R R R R R C C C C C C C C C C C C C C C C C C C C R R R R R R
-R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
-R X R R R R R X X R R R R R R R R R R R R X X R R R R R R R X R
-R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R
-R R R I R R R R X R R I R R R R X R R I R R R R X R R I R R R R
-R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R R
-R X X R R R R R R R R R R R R R R R R R R R R R R R R R R X X R
-R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
-R R X R R R R R R R R R R R R R R R R R R R R R R R R R R X R R
-R R R R R R M M M M M M M M M M M M M M M M M M M M R R R R R R
-R R R R R R M M M M M M M M M M M M M M M M M M M M R R R R R R
-R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
-R X R R R R R X X R R R R R R R R R R R R X X R R R R R R R X R
-R R R R I R R R R I R R R R I R R R R I R R R R I R R R R R R R
-G R R I R R X R R R R X R R I R R R X R R R R X R R I R R R R G
+L . . . L . . . T . L . . . . L . . . L
+. M M M M M M M M M M M M M M M M M M T
+. M M M M M M M M M M M M M M M M M M .
+T R R R R R R R R R R R R R R R R R R T
+T . . T L . T . L I I L T T T L T R R T
+. C C C C C C C C I I C C C C C C R R L
+. C C C C C C C C I I C C C C C C R R T
+L R R R R R R R R R R R R R R R R R R L
+G R R R R R R R R R R R R R R R R R R G
+G R R R R R R R R R R R R R R R R R R G
+L R R R R R R R R R R R R R R R R I I L
+. C C C C C C C C I I C C C C C C I I T
+. R R R R R R R R I I R R R R R R I I T
+. C C C C C C C C I I C C C C C C I I T
+T R R R R R R R R I I R R R R R R I I L
+T L T T L . . T L I I L T T T L T I I T
+T R R R R R R R R R R R R R R R R R R .
+. M M M M M M M M M M M M M M M M M M T
+. M M M M M M M M M M M M M M M M M M .
+L . . L T . L . . T L . . T . L T . . L

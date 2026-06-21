@@ -4,15 +4,15 @@ MAP_ROWS = 30
 MAP_COLS = 40
 
 # --- Simulation ---
-FPS = 30
-VEHICLE_MOVE_INTERVAL = 0.3   # seconds between each step a vehicle moves
-AUTO_SPAWN_INTERVAL = 5.0     # seconds between auto-spawned vehicles
+FPS = 60
+VEHICLE_MOVE_INTERVAL = 0.18  # seconds between each step a vehicle moves
+AUTO_SPAWN_INTERVAL = 2.0     # seconds between auto-spawned vehicles
 
 # --- Traffic ---
-WAIT_THRESHOLD = 5.0              # seconds before a vehicle is considered stuck
+WAIT_THRESHOLD = 1.5              # seconds before a vehicle is considered stuck
 MIN_WAITING_VEHICLES = 3          # vehicles near intersection to trigger congestion
-INTERSECTION_CONGESTION_TIME = 10.0  # seconds total wait at intersection to trigger reroute
-REROUTE_WAIT_THRESHOLD = 10.0     # seconds before forcing reroute
+INTERSECTION_CONGESTION_TIME = 3.0  # seconds total wait at intersection to trigger reroute
+REROUTE_WAIT_THRESHOLD = 2.0      # seconds before forcing reroute
 MANUAL_ENFORCE_THRESHOLD = 8.0    # seconds before guard takes over a manual vehicle on road
 
 # --- Scoring ---

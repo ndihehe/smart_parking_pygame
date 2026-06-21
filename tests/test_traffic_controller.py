@@ -1,13 +1,55 @@
 ﻿import pygame
 import unittest
 
-from config import CELL_SIZE, MANUAL_ENFORCE_THRESHOLD, WAIT_THRESHOLD
+from config import (
+    CELL_SIZE,
+    MANUAL_ENFORCE_THRESHOLD,
+    VEHICLE_MOVE_INTERVAL,
+    WAIT_THRESHOLD,
+)
 from core.game_controller import GameController
 from models.enums import VehicleStatus, VehicleType, WaitReason
 from ui.input_handler import InputHandler
+from utils.grid_utils import get_neighbors
 
 
 MAP_PATH = "data/maps/default_map.txt"
+
+
+def drive_run(gc: GameController) -> tuple[tuple[int, int], ...]:
+    state = gc.map_manager.get_state()
+    for row in range(state.rows):
+        for col in range(state.cols - 2):
+            positions = ((row, col), (row, col + 1), (row, col + 2))
+            if all(gc.map_manager.is_drive_cell(position) for position in positions):
+                return positions
+    raise AssertionError("Map has no three-cell drive run")
+
+
+def turning_drive_path(
+    gc: GameController,
+) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
+    state = gc.map_manager.get_state()
+    for row in range(state.rows):
+        for col in range(state.cols):
+            current = (row, col)
+            if not gc.map_manager.is_drive_cell(current):
+                continue
+            for first in get_neighbors(current, state.rows, state.cols):
+                if not gc.map_manager.is_drive_cell(first):
+                    continue
+                first_delta = (first[0] - row, first[1] - col)
+                for second in get_neighbors(first, state.rows, state.cols):
+                    second_delta = (second[0] - first[0], second[1] - first[1])
+                    if (
+                        second != current
+                        and gc.map_manager.is_drive_cell(second)
+                        and first_delta[0] * second_delta[0]
+                        + first_delta[1] * second_delta[1]
+                        == 0
+                    ):
+                        return current, first, second
+    raise AssertionError("Map has no turning drive path")
 
 
 class TestTrafficController(unittest.TestCase):
@@ -15,33 +57,46 @@ class TestTrafficController(unittest.TestCase):
         gc = GameController(MAP_PATH)
         vehicle = gc.spawn_vehicle(VehicleType.CAR)
         gc.set_manual(vehicle.id)
-        vehicle.position = (0, 1)
+        road_position = drive_run(gc)[0]
+        vehicle.position = road_position
         result = gc.confirm_parking(vehicle.id)
         self.assertEqual(result, "ILLEGAL_ROAD")
-        self.assertIn((0, 1), gc.map_manager.get_state().dynamic_blocks)
+        self.assertIn(road_position, gc.map_manager.get_state().dynamic_blocks)
         self.assertEqual(vehicle.status, VehicleStatus.VIOLATION)
 
     def test_manual_move_from_wrong_road_removes_dynamic_block(self) -> None:
         gc = GameController(MAP_PATH)
         vehicle = gc.spawn_vehicle(VehicleType.CAR)
         gc.set_manual(vehicle.id)
-        vehicle.position = (0, 1)
+        road_position, next_position, _ = drive_run(gc)
+        vehicle.position = road_position
         gc.confirm_parking(vehicle.id)
         gc.set_manual(vehicle.id)
 
-        gc.move_manual(vehicle.id, (0, 1))
+        direction = (
+            next_position[0] - road_position[0],
+            next_position[1] - road_position[1],
+        )
+        gc.move_manual(vehicle.id, direction)
 
-        self.assertEqual(vehicle.position, (0, 2))
-        self.assertNotIn((0, 1), gc.map_manager.get_state().dynamic_blocks)
+        self.assertEqual(vehicle.position, next_position)
+        self.assertNotIn(road_position, gc.map_manager.get_state().dynamic_blocks)
 
     def test_violation_guard_returns_if_manual_vehicle_clears_block(self) -> None:
         gc = GameController(MAP_PATH)
         vehicle = gc.spawn_vehicle(VehicleType.CAR)
         gc.set_manual(vehicle.id)
-        vehicle.position = (0, 1)
+        road_position, next_position, _ = drive_run(gc)
+        vehicle.position = road_position
         gc.confirm_parking(vehicle.id)
         gc.set_manual(vehicle.id)
-        gc.move_manual(vehicle.id, (0, 1))
+        gc.move_manual(
+            vehicle.id,
+            (
+                next_position[0] - road_position[0],
+                next_position[1] - road_position[1],
+            ),
+        )
         guard = gc.guards[0]
         guard.path = []
 
@@ -55,10 +110,17 @@ class TestTrafficController(unittest.TestCase):
         gc = GameController(MAP_PATH)
         vehicle = gc.spawn_vehicle(VehicleType.CAR)
         gc.set_manual(vehicle.id)
-        vehicle.position = (0, 1)
+        road_position, next_position, _ = drive_run(gc)
+        vehicle.position = road_position
         gc.confirm_parking(vehicle.id)
         gc.set_manual(vehicle.id)
-        gc.move_manual(vehicle.id, (0, 1))
+        gc.move_manual(
+            vehicle.id,
+            (
+                next_position[0] - road_position[0],
+                next_position[1] - road_position[1],
+            ),
+        )
         vehicle.wait_time = MANUAL_ENFORCE_THRESHOLD
         guard = gc.guards[0]
         guard.path = []
@@ -72,7 +134,7 @@ class TestTrafficController(unittest.TestCase):
         gc = GameController(MAP_PATH)
         vehicle = gc.spawn_vehicle(VehicleType.MOTORBIKE)
         gc.set_manual(vehicle.id)
-        vehicle.position = (4, 6)
+        vehicle.position = gc.map_manager.get_state().car_slots[0]
         result = gc.confirm_parking(vehicle.id)
         self.assertEqual(result, "WRONG_TYPE")
         self.assertTrue(gc.guards[0].is_active)
@@ -80,7 +142,7 @@ class TestTrafficController(unittest.TestCase):
             gc.update(0.3)
             if vehicle.status == VehicleStatus.MOVING and vehicle.assigned_slot is not None:
                 break
-        self.assertEqual(vehicle.assigned_slot, (14, 6))
+        self.assertIsNotNone(vehicle.assigned_slot)
         self.assertEqual(gc.map_manager.get_state().parking_slots[vehicle.assigned_slot].slot_type, VehicleType.MOTORBIKE)
         for _ in range(80):
             gc.update(0.3)
@@ -95,8 +157,7 @@ class TestTrafficController(unittest.TestCase):
         second = gc.spawn_vehicle(VehicleType.MOTORBIKE)
         gc.set_manual(first.id)
         gc.set_manual(second.id)
-        first.position = (4, 6)
-        second.position = (4, 7)
+        first.position, second.position = gc.map_manager.get_state().car_slots[:2]
         gc.confirm_parking(first.id)
         gc.confirm_parking(second.id)
         active_guards = [guard for guard in gc.guards if guard.task == "VIOLATION"]
@@ -114,13 +175,14 @@ class TestTrafficController(unittest.TestCase):
 
     def test_waiting_yielding_vehicle_resumes_when_next_cell_clear(self) -> None:
         gc = GameController(MAP_PATH)
-        vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
-        vehicle.assigned_slot = (4, 6)
-        vehicle.path = [(0, 1)]
+        start, next_position, _ = drive_run(gc)
+        vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, start)
+        vehicle.assigned_slot = gc.map_manager.get_state().car_slots[0]
+        vehicle.path = [next_position]
         vehicle.status = VehicleStatus.WAITING
         vehicle.wait_reason = WaitReason.YIELDING
-        vehicle.wait_time = 0.3
-        gc.update(0.1)
+        vehicle.wait_time = VEHICLE_MOVE_INTERVAL
+        gc._recover_waiting_vehicle(vehicle)
         self.assertEqual(vehicle.status, VehicleStatus.MOVING)
         self.assertEqual(vehicle.wait_reason, WaitReason.NONE)
 
@@ -221,7 +283,10 @@ class TestTrafficController(unittest.TestCase):
 
     def test_exiting_vehicle_reroutes_around_blocking_vehicle(self) -> None:
         gc = GameController(MAP_PATH)
-        exiting = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
+        exiting = gc.vehicle_manager.spawn_vehicle(
+            VehicleType.CAR,
+            gc.map_manager.get_state().entry_gates[0],
+        )
         gc.start_exit(exiting.id)
         blocker = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, exiting.path[0])
         gc.vehicle_manager.set_manual(blocker.id)
@@ -236,7 +301,10 @@ class TestTrafficController(unittest.TestCase):
 
     def test_exiting_vehicle_waiting_on_exit_gate_is_removed(self) -> None:
         gc = GameController(MAP_PATH)
-        vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 31))
+        vehicle = gc.vehicle_manager.spawn_vehicle(
+            VehicleType.CAR,
+            gc.map_manager.get_state().exit_gates[0],
+        )
         vehicle.status = VehicleStatus.WAITING
         vehicle.wait_reason = WaitReason.EXITING
         vehicle.path = []
@@ -247,38 +315,40 @@ class TestTrafficController(unittest.TestCase):
 
     def test_vehicle_blocked_by_vehicle_yields_without_reroute_loop(self) -> None:
         gc = GameController(MAP_PATH)
-        first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
-        second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 1))
-        first.path = [(0, 1), (0, 2)]
+        start, blocked, after = drive_run(gc)
+        first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, start)
+        second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, blocked)
+        first.path = [blocked, after]
         first.status = VehicleStatus.MOVING
         second.status = VehicleStatus.MANUAL
         gc.vehicle_manager.update(0.3, gc.map_manager.get_state())
         self.assertEqual(first.status, VehicleStatus.WAITING)
         self.assertEqual(first.wait_reason, WaitReason.YIELDING)
-        self.assertEqual(first.path, [(0, 1), (0, 2)])
+        self.assertEqual(first.path, [blocked, after])
 
     def test_game_controller_keeps_yielding_vehicle_waiting_before_reroute_threshold(self) -> None:
         gc = GameController(MAP_PATH)
-        first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
-        second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 1))
-        first.assigned_slot = (4, 6)
-        first.path = [(0, 1), (0, 2)]
+        start, blocked, after = drive_run(gc)
+        first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, start)
+        second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, blocked)
+        first.assigned_slot = gc.map_manager.get_state().car_slots[0]
+        first.path = [blocked, after]
         first.status = VehicleStatus.MOVING
         second.status = VehicleStatus.MANUAL
         gc.update(0.3)
         gc.update(0.3)
         self.assertEqual(first.status, VehicleStatus.WAITING)
         self.assertEqual(first.wait_reason, WaitReason.YIELDING)
-        self.assertEqual(first.path, [(0, 1), (0, 2)])
+        self.assertEqual(first.path, [blocked, after])
 
     def test_cell_conflict_does_not_dispatch_guard(self) -> None:
         gc = GameController(MAP_PATH)
-        first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
-        second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 2))
-        first.assigned_slot = (4, 6)
-        second.assigned_slot = (4, 8)
-        first.path = [(0, 1)]
-        second.path = [(0, 1)]
+        first_position, target, second_position = drive_run(gc)
+        first = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, first_position)
+        second = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, second_position)
+        first.assigned_slot, second.assigned_slot = gc.map_manager.get_state().car_slots[:2]
+        first.path = [target]
+        second.path = [target]
         first.status = VehicleStatus.MOVING
         second.status = VehicleStatus.MOVING
         gc.traffic_controller.update(
@@ -295,25 +365,28 @@ class TestTrafficController(unittest.TestCase):
 
     def test_wait_threshold_marks_intersection_congestion(self) -> None:
         gc = GameController(MAP_PATH)
-        vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 4))
+        intersection = gc.map_manager.get_state().intersection_cells[0]
+        vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, intersection)
         vehicle.status = VehicleStatus.WAITING
         vehicle.wait_time = WAIT_THRESHOLD
-        for neighbor in gc.map_manager.get_state().intersection_neighbors[(0, 4)]:
+        for neighbor in gc.map_manager.get_state().intersection_neighbors[intersection]:
             gc.map_manager.add_dynamic_block(neighbor)
         gc.traffic_controller.update([vehicle], gc.map_manager, 0.0, gc.guards)
         self.assertEqual(vehicle.wait_reason, WaitReason.TRAFFIC_CONGESTION)
 
     def test_vehicle_direction_updates_from_path_shape(self) -> None:
         gc = GameController(MAP_PATH)
-        straight = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
-        straight.path = [(0, 1), (0, 2)]
+        straight_start, straight_next, straight_after = drive_run(gc)
+        straight = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, straight_start)
+        straight.path = [straight_next, straight_after]
         straight.status = VehicleStatus.MOVING
         gc.vehicle_manager.update(0.3, gc.map_manager.get_state())
         self.assertEqual(straight.direction, "STRAIGHT")
 
         gc = GameController(MAP_PATH)
-        turning = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, (0, 0))
-        turning.path = [(0, 1), (1, 1)]
+        turn_start, turn_next, turn_after = turning_drive_path(gc)
+        turning = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, turn_start)
+        turning.path = [turn_next, turn_after]
         turning.status = VehicleStatus.MOVING
         gc.vehicle_manager.update(0.3, gc.map_manager.get_state())
         self.assertEqual(turning.direction, "TURN")

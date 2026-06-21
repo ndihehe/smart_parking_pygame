@@ -16,6 +16,10 @@ from ui.sidebar import (
     ACTION_SPEED_SLOW,
     ACTION_STEP_MODE,
     ACTION_TRAFFIC_JAM,
+    ACTION_TOGGLE_NIGHT,
+    ACTION_VIEW_ADD_VEHICLE,
+    ACTION_VIEW_SCENARIOS,
+    ACTION_VIEW_SIMULATION,
     ACTION_TYPE_CAR,
     ACTION_TYPE_MOTORBIKE,
     sidebar_action_at_position,
@@ -67,10 +71,9 @@ class InputHandler:
                         )
                         if vehicle is not None and vehicle.status == VehicleStatus.MANUAL:
                             self.gc.confirm_parking(self._selected_vehicle_id)
+                            self._selected_vehicle_id = None
                 elif event.key == pygame.K_ESCAPE:
-                    if self._selected_vehicle_id is not None:
-                        self.gc.cancel_manual(self._selected_vehicle_id)
-                    self._selected_vehicle_id = None
+                    self._release_selected_vehicle()
 
                 if self._selected_vehicle_id is not None:
                     vehicle = self.gc.vehicle_manager.get_vehicle(self._selected_vehicle_id)
@@ -101,6 +104,8 @@ class InputHandler:
                             self.gc.placement_plan,
                             self.gc.simulation_speed,
                             self.gc.step_mode_enabled,
+                            self.gc.night_mode,
+                            self.gc.sidebar_view,
                         )
                         if action is not None:
                             self._handle_sidebar_action(action)
@@ -126,7 +131,6 @@ class InputHandler:
                         self._selected_vehicle_id = None
                     continue
 
-                self._selected_vehicle_id = None
                 vehicles = self.gc.vehicle_manager.get_all_vehicles()
                 selected_vehicle = next(
                     (vehicle for vehicle in vehicles if vehicle.position == position),
@@ -138,10 +142,20 @@ class InputHandler:
                         None,
                     )
 
+                if (
+                    self._selected_vehicle_id is not None
+                    and (
+                        selected_vehicle is None
+                        or selected_vehicle.id != self._selected_vehicle_id
+                    )
+                ):
+                    self._release_selected_vehicle()
+
                 if selected_vehicle is not None:
                     self._selected_vehicle_id = selected_vehicle.id
                     if event.button == 1:
-                        self.gc.set_manual(selected_vehicle.id)
+                        if selected_vehicle.status != VehicleStatus.MANUAL:
+                            self.gc.set_manual(selected_vehicle.id)
                     else:
                         self.gc.start_exit(selected_vehicle.id)
 
@@ -150,11 +164,22 @@ class InputHandler:
     def get_selected_id(self) -> int | None:
         return self._selected_vehicle_id
 
+    def _release_selected_vehicle(self) -> None:
+        if self._selected_vehicle_id is not None:
+            self.gc.cancel_manual(self._selected_vehicle_id)
+        self._selected_vehicle_id = None
+
     def _handle_sidebar_action(self, action: str) -> None:
         if action.startswith(ACTION_ALGORITHM_PREFIX):
             self.gc.set_pathfinding_algorithm(
                 AlgorithmType(action.split(":", 1)[1])
             )
+        elif action == ACTION_VIEW_SIMULATION:
+            self.gc.set_sidebar_view("simulation")
+        elif action == ACTION_VIEW_ADD_VEHICLE:
+            self.gc.set_sidebar_view("add_vehicle")
+        elif action == ACTION_VIEW_SCENARIOS:
+            self.gc.set_sidebar_view("scenarios")
         elif action == ACTION_TRAFFIC_JAM:
             self.gc.prepare_traffic_jam_scenario()
             self._selected_vehicle_id = None
@@ -162,7 +187,7 @@ class InputHandler:
             self.gc.reset_simulation()
             self._selected_vehicle_id = None
         elif action == ACTION_PLACE:
-            self.gc.begin_vehicle_placement()
+            self.gc.toggle_vehicle_placement()
             self._selected_vehicle_id = None
         elif action == ACTION_TYPE_CAR:
             self._handle_vehicle_type_action(VehicleType.CAR)
@@ -178,6 +203,8 @@ class InputHandler:
             self.gc.set_simulation_speed(0.25)
         elif action == ACTION_STEP_MODE:
             self.gc.toggle_step_mode()
+        elif action == ACTION_TOGGLE_NIGHT:
+            self.gc.toggle_night_mode()
         elif action == ACTION_NEXT_STEP:
             self.gc.request_next_step()
         elif action == ACTION_PREVIOUS_STEP:

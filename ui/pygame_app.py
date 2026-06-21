@@ -81,6 +81,8 @@ class PygameApp:
                     self.gc.active_scenario,
                     self.gc.simulation_speed,
                     self.gc.step_mode_enabled,
+                    self.gc.night_mode,
+                    self.gc.sidebar_view,
                 )
             pygame.display.flip()
         pygame.quit()

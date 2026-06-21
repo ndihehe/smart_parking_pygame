@@ -47,6 +47,8 @@ def draw_hud(
     active_scenario: str | None = None,
     simulation_speed: float = 1.0,
     step_mode_enabled: bool = False,
+    night_mode: bool = False,
+    sidebar_view: str = "simulation",
     pathfinding_metrics: dict[str, AlgorithmMetrics] | None = None,
 ) -> None:
     if map_state is None:
@@ -64,5 +66,7 @@ def draw_hud(
         active_scenario,
         simulation_speed,
         step_mode_enabled,
+        night_mode,
+        sidebar_view,
         pathfinding_metrics,
     )

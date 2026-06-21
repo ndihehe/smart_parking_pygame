@@ -1,7 +1,7 @@
 ﻿import unittest
 
 from core.game_controller import GameController
-from models.enums import VehicleStatus, VehicleType
+from models.enums import CellType, VehicleStatus, VehicleType
 from utils.logger import Logger
 
 
@@ -58,16 +58,21 @@ class TestParkingManager(unittest.TestCase):
         vehicle = gc.spawn_vehicle(VehicleType.MOTORBIKE)
         state = gc.map_manager.get_state()
 
-        vehicle.position = (0, 1)
+        vehicle.position = next(
+            (row_index, col_index)
+            for row_index, row in enumerate(state.grid)
+            for col_index, cell in enumerate(row)
+            if cell == CellType.ROAD
+        )
         self.assertEqual(gc.parking_manager.validate_parking(vehicle, state), "ILLEGAL_ROAD")
 
-        vehicle.position = (0, 4)
+        vehicle.position = state.intersection_cells[0]
         self.assertEqual(
             gc.parking_manager.validate_parking(vehicle, state),
             "BLOCKING_INTERSECTION",
         )
 
-        vehicle.position = (4, 6)
+        vehicle.position = state.car_slots[0]
         self.assertEqual(gc.parking_manager.validate_parking(vehicle, state), "WRONG_TYPE")
 
     def test_auto_arrived_parking_uses_validate_parking(self) -> None:
@@ -80,6 +85,30 @@ class TestParkingManager(unittest.TestCase):
         gc.update(0.1)
         self.assertEqual(vehicle.status, VehicleStatus.PARKED)
         self.assertTrue(any("parking accepted: OK" in line for line in Logger.get_logs()))
+
+    def test_car_can_use_inner_tandem_slot(self) -> None:
+        gc = GameController(MAP_PATH)
+        state = gc.map_manager.get_state()
+        inner_slot, outer_slot = next(iter(state.car_inner_to_outer.items()))
+        vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, state.entry_gates[0])
+
+        gc.parking_manager.assign_slot(vehicle, inner_slot, state)
+
+        self.assertEqual(vehicle.assigned_slot, inner_slot)
+        self.assertTrue(state.parking_slots[outer_slot].is_reserved)
+        self.assertEqual(state.parking_slots[outer_slot].reserved_by, vehicle.id)
+
+    def test_car_inner_slot_is_blocked_when_outer_slot_is_occupied(self) -> None:
+        gc = GameController(MAP_PATH)
+        state = gc.map_manager.get_state()
+        inner_slot, outer_slot = next(iter(state.car_inner_to_outer.items()))
+        outer_vehicle = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, outer_slot)
+        gc.parking_manager.occupy_slot(outer_vehicle, outer_slot, state)
+        newcomer = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, state.entry_gates[0])
+
+        self.assertFalse(
+            gc.parking_manager._tandem_access_available(newcomer, inner_slot, state)
+        )
 
 
 if __name__ == "__main__":

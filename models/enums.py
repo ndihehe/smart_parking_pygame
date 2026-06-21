@@ -7,6 +7,8 @@ class CellType(Enum):
     INTERSECTION = "I"
     OBSTACLE = "X"
     BLOCKED = "B"
+    TREE = "T"
+    LAMP = "L"
     PARKING_SLOT = "P"
     CAR_SLOT = "C"
     MOTO_SLOT = "M"

@@ -9,6 +9,7 @@ from models.guard import Guard
 from models.map_state import MapState
 from models.vehicle import Vehicle
 from ui.colors import (
+    BLACK,
     BLOCKED,
     GRID_LINE,
     PATH_COLOR,
@@ -25,6 +26,15 @@ from ui.hud_overlay import draw_hud
 from ui.map_tile_renderer import MapTileRenderer
 from ui.sprite_loader import SpriteLoader
 from ui.view_transform import get_game_viewport_rect, get_map_view_rect, map_pixel_size
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MAP_ASSET_ROOT = PROJECT_ROOT / "assets" / "maps"
+VEHICLE_OVERLAY_PATHS = {
+    "parked": MAP_ASSET_ROOT / "vehicle_parked_frame_green.png",
+    "violation": MAP_ASSET_ROOT / "vehicle_violation_frame_red.png",
+    "selected": MAP_ASSET_ROOT / "vehicle_selected_frame_blue.png",
+}
 
 
 class Renderer:
@@ -44,6 +54,16 @@ class Renderer:
         self._fallback_motorbike_sprite_keys: list[str] = []
         self._map_tile_renderer = MapTileRenderer(self.font_small, self._sprites)
         self._world_surface: pygame.Surface | None = None
+        self._scaled_sprite_cache: dict[tuple[int, int, int], pygame.Surface] = {}
+        self._vehicle_overlay_sources = {
+            name: self._load_vehicle_overlay(path)
+            for name, path in VEHICLE_OVERLAY_PATHS.items()
+        }
+        self._vehicle_overlay_cache: dict[tuple[str, int], pygame.Surface] = {}
+        self._night_light_cache: dict[int, tuple[pygame.Surface, pygame.Surface]] = {}
+        self._headlight_cache: dict[
+            tuple[int, str], tuple[pygame.Surface, pygame.Surface]
+        ] = {}
 
     def draw_map(self, map_state: MapState) -> None:
         self._ensure_map_surface(map_state)
@@ -69,7 +89,11 @@ class Renderer:
         self._map_surface = pygame.Surface((width, height))
         self._map_cache_key = cache_key
 
-        if map_state.image_path:
+        if (
+            map_state.image_path
+            and not self._map_tile_renderer.has_tile_assets()
+            and self._background_exists(map_state.image_path)
+        ):
             background = self._load_background(map_state)
             self._map_surface.blit(background, (0, 0))
             return
@@ -84,6 +108,7 @@ class Renderer:
                     rect,
                     cell_type,
                     position,
+                    map_state,
                 )
 
     def _load_background(self, map_state: MapState) -> pygame.Surface:
@@ -104,6 +129,12 @@ class Renderer:
         self._background_surface = background
         self._background_path = map_state.image_path
         return background
+
+    def _background_exists(self, image_path: str) -> bool:
+        path = Path(image_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path.exists()
 
     def _cell_to_pixel(
         self,
@@ -141,41 +172,231 @@ class Renderer:
         }
 
         for vehicle in vehicles:
-            x, y = self._cell_to_pixel(map_state, vehicle.position)
-            center = self._cell_center(map_state, vehicle.position)
-            radius = map_state.tile_size // 2 - 5
+            center = self._vehicle_render_center(map_state, vehicle)
+            x = int(center[0] - map_state.tile_size / 2)
+            y = int(center[1] - map_state.tile_size / 2)
+            radius = max(6, map_state.tile_size // 2 - 9)
             color = status_colors[vehicle.status]
-            sprite = self._get_vehicle_sprite(vehicle)
+            sprite = self._get_vehicle_sprite(vehicle, map_state)
+            self._draw_vehicle_overlay(
+                center,
+                map_state.tile_size,
+                vehicle,
+                selected_vehicle_id,
+            )
+            self._draw_vehicle_shadow(center, map_state.tile_size)
             if sprite is not None:
-                sprite_rect = sprite.get_rect(center=center)
-                self.screen.blit(sprite, sprite_rect)
+                scaled_sprite = self._scale_vehicle_sprite(
+                    sprite,
+                    vehicle.type,
+                    map_state.tile_size,
+                )
+                sprite_rect = scaled_sprite.get_rect(center=center)
+                self.screen.blit(scaled_sprite, sprite_rect)
                 label_text = f"C{vehicle.id}" if vehicle.type.value == "CAR" else f"M{vehicle.id}"
             elif vehicle.type.value == "CAR":
-                rect = pygame.Rect(0, 0, map_state.tile_size - 8, map_state.tile_size - 12)
-                rect.center = center
-                pygame.draw.rect(self.screen, color, rect, border_radius=4)
-                pygame.draw.rect(self.screen, WHITE, rect, 2)
+                self._draw_car_icon(center, map_state.tile_size, color)
                 label_text = f"C{vehicle.id}"
             else:
                 pygame.draw.circle(self.screen, color, center, radius)
                 pygame.draw.circle(self.screen, WHITE, center, radius, 2)
+                pygame.draw.circle(self.screen, BLACK, center, max(2, radius // 3))
                 label_text = f"M{vehicle.id}"
 
-            if vehicle.id == selected_vehicle_id:
-                selected_rect = pygame.Rect(x + 2, y + 2, map_state.tile_size - 4, map_state.tile_size - 4)
-                pygame.draw.rect(self.screen, WHITE, selected_rect, 3)
+            self._draw_status_dot(
+                (x + map_state.tile_size - 8, y + 8),
+                color,
+            )
+            self._draw_vehicle_label(
+                label_text,
+                (center[0], y + map_state.tile_size - 8),
+            )
 
-            pygame.draw.circle(self.screen, color, (x + map_state.tile_size - 7, y + 7), 4)
-            label = self.font_bold.render(label_text, True, TEXT_COLOR)
-            label_rect = label.get_rect(center=(center[0], y + map_state.tile_size - 7))
-            self.screen.blit(label, label_rect)
+    def _vehicle_render_center(
+        self,
+        map_state: MapState,
+        vehicle: Vehicle,
+    ) -> tuple[int, int]:
+        end_x, end_y = self._cell_center(map_state, vehicle.position)
+        if vehicle.render_from is None or vehicle.render_progress >= 1.0:
+            return end_x, end_y
+        start_x, start_y = self._cell_center(map_state, vehicle.render_from)
+        progress = vehicle.render_progress
+        return (
+            int(start_x + (end_x - start_x) * progress),
+            int(start_y + (end_y - start_y) * progress),
+        )
 
-    def _get_vehicle_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
+    def _load_vehicle_overlay(self, path: Path) -> pygame.Surface | None:
+        if not path.exists():
+            return None
+        source = pygame.image.load(str(path)).convert_alpha()
+        preview = pygame.transform.smoothscale(source, (256, 256))
+        for row in range(preview.get_height()):
+            for col in range(preview.get_width()):
+                red, green, blue, alpha = preview.get_at((col, row))
+                if (
+                    alpha
+                    and min(red, green, blue) > 205
+                    and max(red, green, blue) - min(red, green, blue) < 12
+                ):
+                    preview.set_at((col, row), (red, green, blue, 0))
+        bounds = preview.get_bounding_rect(min_alpha=16)
+        if bounds.width == 0 or bounds.height == 0:
+            return None
+        return preview.subsurface(bounds).copy()
+
+    def _draw_vehicle_overlay(
+        self,
+        center: tuple[int, int],
+        tile_size: int,
+        vehicle: Vehicle,
+        selected_vehicle_id: int | None,
+    ) -> None:
+        overlay_name: str | None = None
+        if (
+            vehicle.id == selected_vehicle_id
+            and vehicle.status == VehicleStatus.MANUAL
+        ):
+            overlay_name = "selected"
+        elif vehicle.status == VehicleStatus.VIOLATION:
+            overlay_name = "violation"
+        elif vehicle.status == VehicleStatus.PARKED:
+            overlay_name = "parked"
+        if overlay_name is None:
+            return
+
+        cache_key = (overlay_name, tile_size)
+        overlay = self._vehicle_overlay_cache.get(cache_key)
+        if overlay is None:
+            source = self._vehicle_overlay_sources.get(overlay_name)
+            if source is None:
+                return
+            overlay = self._build_glowing_overlay(source, tile_size)
+            self._vehicle_overlay_cache[cache_key] = overlay
+        self.screen.blit(overlay, overlay.get_rect(center=center))
+
+    def _build_glowing_overlay(
+        self,
+        source: pygame.Surface,
+        tile_size: int,
+    ) -> pygame.Surface:
+        crisp_size = tile_size + 8
+        canvas_size = tile_size + 22
+        canvas = pygame.Surface((canvas_size, canvas_size), pygame.SRCALPHA)
+        for size, alpha in (
+            (tile_size + 20, 38),
+            (tile_size + 14, 72),
+            (crisp_size, 255),
+        ):
+            layer = pygame.transform.smoothscale(source, (size, size))
+            layer.set_alpha(alpha)
+            canvas.blit(layer, layer.get_rect(center=canvas.get_rect().center))
+        return canvas
+
+    def _draw_vehicle_shadow(
+        self,
+        center: tuple[int, int],
+        tile_size: int,
+    ) -> None:
+        shadow = pygame.Rect(0, 0, tile_size - 12, max(5, tile_size // 6))
+        shadow.center = (center[0], center[1] + tile_size // 5)
+        pygame.draw.ellipse(self.screen, (0, 0, 0, 95), shadow)
+
+    def _draw_car_icon(
+        self,
+        center: tuple[int, int],
+        tile_size: int,
+        color: tuple[int, int, int],
+    ) -> None:
+        body = pygame.Rect(0, 0, tile_size - 8, tile_size - 14)
+        body.center = center
+        roof = pygame.Rect(0, 0, body.width - 12, max(8, body.height // 2))
+        roof.center = (center[0], center[1] - 2)
+        windshield = pygame.Rect(0, 0, roof.width - 8, max(4, roof.height // 2))
+        windshield.center = (center[0], roof.top + roof.height // 2)
+
+        pygame.draw.rect(self.screen, color, body, border_radius=5)
+        pygame.draw.rect(self.screen, WHITE, body, 2, border_radius=5)
+        pygame.draw.rect(self.screen, _darken(color, 36), roof, border_radius=4)
+        pygame.draw.rect(self.screen, (166, 220, 238), windshield, border_radius=3)
+
+        wheel_width = max(4, tile_size // 9)
+        wheel_height = max(8, tile_size // 5)
+        for wheel_x in (body.left - 1, body.right - wheel_width + 1):
+            pygame.draw.rect(
+                self.screen,
+                (18, 20, 24),
+                pygame.Rect(wheel_x, body.top + 5, wheel_width, wheel_height),
+                border_radius=2,
+            )
+            pygame.draw.rect(
+                self.screen,
+                (18, 20, 24),
+                pygame.Rect(wheel_x, body.bottom - wheel_height - 5, wheel_width, wheel_height),
+                border_radius=2,
+            )
+
+        pygame.draw.circle(self.screen, (255, 238, 168), (body.right - 5, body.top + 5), 2)
+        pygame.draw.circle(self.screen, (255, 238, 168), (body.right - 5, body.bottom - 5), 2)
+
+    def _scale_vehicle_sprite(
+        self,
+        sprite: pygame.Surface,
+        vehicle_type: VehicleType,
+        tile_size: int,
+    ) -> pygame.Surface:
+        max_width = tile_size - (6 if vehicle_type == VehicleType.CAR else 12)
+        max_height = tile_size - (8 if vehicle_type == VehicleType.CAR else 14)
+        cache_key = (id(sprite), max_width, max_height)
+        cached = self._scaled_sprite_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        width, height = sprite.get_size()
+        scale = min(max_width / width, max_height / height)
+        scaled_size = (
+            max(1, int(width * scale)),
+            max(1, int(height * scale)),
+        )
+        scaled = pygame.transform.smoothscale(sprite, scaled_size)
+        self._scaled_sprite_cache[cache_key] = scaled
+        return scaled
+
+    def _draw_status_dot(
+        self,
+        center: tuple[int, int],
+        color: tuple[int, int, int],
+    ) -> None:
+        pygame.draw.circle(self.screen, BLACK, center, 6)
+        pygame.draw.circle(self.screen, color, center, 4)
+
+    def _draw_vehicle_label(
+        self,
+        text: str,
+        center: tuple[int, int],
+    ) -> None:
+        label = self.font_bold.render(text, True, WHITE)
+        label_rect = label.get_rect(center=center)
+        bg_rect = label_rect.inflate(8, 4)
+        pygame.draw.rect(self.screen, (15, 18, 24), bg_rect, border_radius=4)
+        pygame.draw.rect(self.screen, (235, 240, 225), bg_rect, 1, border_radius=4)
+        self.screen.blit(label, label_rect)
+
+    def _get_vehicle_sprite(
+        self,
+        vehicle: Vehicle,
+        map_state: MapState,
+    ) -> pygame.Surface | None:
         if vehicle.type.value == "CAR":
-            return self._get_car_sprite(vehicle)
-        return self._get_motorbike_sprite(vehicle)
+            return self._get_car_sprite(vehicle, map_state)
+        return self._get_motorbike_sprite(vehicle, map_state)
 
-    def _get_motorbike_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
+    def _get_motorbike_sprite(
+        self,
+        vehicle: Vehicle,
+        map_state: MapState,
+    ) -> pygame.Surface | None:
         sprite_options = (
             [("directional", sprite_id) for sprite_id in self._motorbike_sprite_ids]
             + [("oriented", sprite_key) for sprite_key in self._fallback_motorbike_sprite_keys]
@@ -185,7 +406,9 @@ class Renderer:
 
         sprite_type, sprite_id = sprite_options[vehicle.id % len(sprite_options)]
         if sprite_type == "directional":
-            for direction in self._direction_fallbacks(self._vehicle_direction_name(vehicle)):
+            for direction in self._direction_fallbacks(
+                self._vehicle_direction_name(vehicle, map_state)
+            ):
                 sprite = self._sprites.get(f"{sprite_id}_{direction}")
                 if sprite is not None:
                     return sprite
@@ -193,12 +416,18 @@ class Renderer:
         sprite = self._sprites.get(sprite_id)
         if sprite is None:
             return None
-        return self._orient_vehicle_sprite(sprite, vehicle)
+        return self._orient_vehicle_sprite(sprite, vehicle, map_state)
 
-    def _get_car_sprite(self, vehicle: Vehicle) -> pygame.Surface | None:
+    def _get_car_sprite(
+        self,
+        vehicle: Vehicle,
+        map_state: MapState,
+    ) -> pygame.Surface | None:
         if self._car_sprite_ids:
             sprite_id = self._car_sprite_ids[vehicle.id % len(self._car_sprite_ids)]
-            for direction in self._direction_fallbacks(self._vehicle_direction_name(vehicle)):
+            for direction in self._direction_fallbacks(
+                self._vehicle_direction_name(vehicle, map_state)
+            ):
                 sprite = self._sprites.get(f"{sprite_id}_{direction}")
                 if sprite is not None:
                     return sprite
@@ -211,7 +440,7 @@ class Renderer:
         sprite = self._sprites.get(sprite_key)
         if sprite is None:
             return None
-        return self._orient_vehicle_sprite(sprite, vehicle)
+        return self._orient_vehicle_sprite(sprite, vehicle, map_state)
 
     def _directional_sprite_ids(self, prefix: str) -> list[str]:
         suffix = "_east"
@@ -240,9 +469,12 @@ class Renderer:
     def _existing_sprite_keys(self, keys: list[str]) -> list[str]:
         return [key for key in keys if key in self._sprites]
 
-    def _vehicle_direction_name(self, vehicle: Vehicle) -> str:
+    def _vehicle_direction_name(self, vehicle: Vehicle, map_state: MapState) -> str:
+        if vehicle.status == VehicleStatus.MANUAL:
+            return vehicle.heading
         if not vehicle.path:
-            return "east"
+            parked_direction = self._parked_vehicle_direction_name(vehicle, map_state)
+            return parked_direction if parked_direction is not None else "east"
 
         first_delta = self._movement_delta(vehicle.position, vehicle.path[0])
         if len(vehicle.path) > 1:
@@ -258,6 +490,54 @@ class Renderer:
 
         direction = self._delta_direction_name(first_delta)
         return direction if direction is not None else "east"
+
+    def _parked_vehicle_direction_name(
+        self,
+        vehicle: Vehicle,
+        map_state: MapState,
+    ) -> str | None:
+        if vehicle.status not in {VehicleStatus.ARRIVED, VehicleStatus.PARKED}:
+            return None
+        if vehicle.position not in map_state.parking_slots:
+            return None
+        if vehicle.type == VehicleType.CAR:
+            return "north"
+
+        inner_to_outer = (
+            map_state.car_inner_to_outer
+            if vehicle.type == VehicleType.CAR
+            else map_state.motorbike_inner_to_outer
+        )
+        outer_to_inner = (
+            map_state.car_outer_to_inner
+            if vehicle.type == VehicleType.CAR
+            else map_state.motorbike_outer_to_inner
+        )
+        outer = inner_to_outer.get(vehicle.position)
+        if outer is not None:
+            return self._delta_direction_name(
+                self._movement_delta(vehicle.position, outer)
+            )
+        inner = outer_to_inner.get(vehicle.position)
+        if inner is not None:
+            return self._delta_direction_name(
+                self._movement_delta(inner, vehicle.position)
+            )
+
+        row, col = vehicle.position
+        drive_types = {"G", "R", "I"}
+        candidates = [
+            ((row + 1, col), "north"),
+            ((row - 1, col), "south"),
+            ((row, col + 1), "west"),
+            ((row, col - 1), "east"),
+        ]
+        for (neighbor_row, neighbor_col), direction in candidates:
+            if not (0 <= neighbor_row < map_state.rows and 0 <= neighbor_col < map_state.cols):
+                continue
+            if map_state.grid[neighbor_row][neighbor_col].value in drive_types:
+                return direction
+        return None
 
     def _movement_delta(
         self,
@@ -291,18 +571,14 @@ class Renderer:
         self,
         sprite: pygame.Surface,
         vehicle: Vehicle,
+        map_state: MapState,
     ) -> pygame.Surface:
-        if not vehicle.path:
-            return sprite
-
-        next_cell = vehicle.path[0]
-        row_delta = next_cell[0] - vehicle.position[0]
-        col_delta = next_cell[1] - vehicle.position[1]
-        if col_delta < 0:
+        direction = self._vehicle_direction_name(vehicle, map_state)
+        if direction == "west":
             return pygame.transform.flip(sprite, True, False)
-        if row_delta < 0:
+        if direction in {"north", "northeast", "northwest"}:
             return pygame.transform.rotate(sprite, 90)
-        if row_delta > 0:
+        if direction in {"south", "southeast", "southwest"}:
             return pygame.transform.rotate(sprite, -90)
         return sprite
 
@@ -433,6 +709,8 @@ class Renderer:
         active_scenario: str | None = None,
         simulation_speed: float = 1.0,
         step_mode_enabled: bool = False,
+        night_mode: bool = False,
+        sidebar_view: str = "simulation",
     ) -> None:
         world_size = map_pixel_size(map_state)
         if self._world_surface is None or self._world_surface.get_size() != world_size:
@@ -442,6 +720,8 @@ class Renderer:
         self.screen = self._world_surface
         self.screen.fill((0, 0, 0))
         self.draw_map(map_state)
+        if night_mode:
+            self._draw_night_lighting(map_state, vehicles)
         self.draw_paths(map_state, vehicles)
         self.draw_vehicles(map_state, vehicles, selected_vehicle_id)
         self.draw_guards(map_state, guards)
@@ -453,6 +733,15 @@ class Renderer:
         view_rect = get_map_view_rect(map_state, target_screen.get_size())
         scaled_world = pygame.transform.smoothscale(self._world_surface, view_rect.size)
         target_screen.blit(scaled_world, view_rect)
+        self._draw_map_overlay(
+            target_screen,
+            view_rect,
+            vehicles,
+            selected_vehicle_id,
+            simulation_status,
+            placement_vehicle_type,
+            placement_plan,
+        )
         draw_hud(
             target_screen,
             self.font_bold,
@@ -466,5 +755,216 @@ class Renderer:
             active_scenario,
             simulation_speed,
             step_mode_enabled,
+            night_mode,
+            sidebar_view,
             METRICS.snapshot(),
         )
+
+    def _draw_night_lighting(
+        self,
+        map_state: MapState,
+        vehicles: list[Vehicle],
+    ) -> None:
+        world_size = map_pixel_size(map_state)
+        darkness = pygame.Surface(world_size, pygame.SRCALPHA)
+        darkness.fill((3, 7, 18, 205))
+        glow = pygame.Surface(world_size, pygame.SRCALPHA)
+
+        tile_size = map_state.tile_size
+        relief_mask, warm_glow = self._night_light_surfaces(tile_size)
+        for position in map_state.lamp_cells:
+            center = self._cell_center(map_state, position)
+            relief_rect = relief_mask.get_rect(center=center)
+            darkness.blit(
+                relief_mask,
+                relief_rect,
+                special_flags=pygame.BLEND_RGBA_SUB,
+            )
+            glow.blit(warm_glow, warm_glow.get_rect(center=center))
+
+        self._draw_vehicle_headlights(darkness, glow, map_state, vehicles)
+
+        self.screen.blit(darkness, (0, 0))
+        self.screen.blit(glow, (0, 0))
+
+    def _draw_vehicle_headlights(
+        self,
+        darkness: pygame.Surface,
+        glow: pygame.Surface,
+        map_state: MapState,
+        vehicles: list[Vehicle],
+    ) -> None:
+        active_statuses = {
+            VehicleStatus.MOVING,
+            VehicleStatus.WAITING,
+            VehicleStatus.REROUTING,
+            VehicleStatus.MANUAL,
+        }
+        direction_vectors = {
+            "north": (0.0, -1.0),
+            "south": (0.0, 1.0),
+            "west": (-1.0, 0.0),
+            "east": (1.0, 0.0),
+            "northeast": (0.7071, -0.7071),
+            "northwest": (-0.7071, -0.7071),
+            "southeast": (0.7071, 0.7071),
+            "southwest": (-0.7071, 0.7071),
+        }
+        tile_size = map_state.tile_size
+        relief = pygame.Surface(darkness.get_size(), pygame.SRCALPHA)
+        for vehicle in vehicles:
+            if vehicle.status not in active_statuses:
+                continue
+            light_heading = self._vehicle_direction_name(vehicle, map_state)
+            forward = direction_vectors.get(light_heading, (1.0, 0.0))
+            perpendicular = (-forward[1], forward[0])
+            center = self._vehicle_render_center(map_state, vehicle)
+            lamp_offsets = (
+                (-0.16, 0.16)
+                if vehicle.type == VehicleType.CAR
+                else (0.0,)
+            )
+            for side in lamp_offsets:
+                origin = (
+                    center[0]
+                    + int(forward[0] * tile_size * 0.36)
+                    + int(perpendicular[0] * tile_size * side),
+                    center[1]
+                    + int(forward[1] * tile_size * 0.36)
+                    + int(perpendicular[1] * tile_size * side),
+                )
+                beam_relief, beam_glow = self._headlight_surfaces(
+                    tile_size,
+                    light_heading,
+                )
+                relief.blit(beam_relief, beam_relief.get_rect(center=origin))
+                glow.blit(beam_glow, beam_glow.get_rect(center=origin))
+        darkness.blit(relief, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
+
+    def _headlight_surfaces(
+        self,
+        tile_size: int,
+        heading: str,
+    ) -> tuple[pygame.Surface, pygame.Surface]:
+        cache_key = (tile_size, heading)
+        cached = self._headlight_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        vectors = {
+            "north": (0.0, -1.0),
+            "south": (0.0, 1.0),
+            "west": (-1.0, 0.0),
+            "east": (1.0, 0.0),
+            "northeast": (0.7071, -0.7071),
+            "northwest": (-0.7071, -0.7071),
+            "southeast": (0.7071, 0.7071),
+            "southwest": (-0.7071, 0.7071),
+        }
+        forward = vectors.get(heading, (1.0, 0.0))
+        perpendicular = (-forward[1], forward[0])
+        length = tile_size * 3.0
+        size = int(length * 2) + 2
+        center = (size - 1) / 2
+        relief = pygame.Surface((size, size), pygame.SRCALPHA)
+        warm = pygame.Surface((size, size), pygame.SRCALPHA)
+
+        for y in range(size):
+            for x in range(size):
+                relative_x = x - center
+                relative_y = y - center
+                forward_distance = (
+                    relative_x * forward[0] + relative_y * forward[1]
+                )
+                if not 0 <= forward_distance <= length:
+                    continue
+                lateral_distance = abs(
+                    relative_x * perpendicular[0]
+                    + relative_y * perpendicular[1]
+                )
+                progress = forward_distance / length
+                half_width = tile_size * (0.10 + 0.68 * progress)
+                if lateral_distance >= half_width:
+                    continue
+                lateral_fade = (1.0 - lateral_distance / half_width) ** 2
+                distance_fade = (1.0 - progress) ** 1.45
+                intensity = lateral_fade * distance_fade
+                relief.set_at((x, y), (0, 0, 0, int(112 * intensity)))
+                warm.set_at((x, y), (255, 216, 142, int(58 * intensity)))
+
+        self._headlight_cache[cache_key] = (relief, warm)
+        return relief, warm
+
+    def _night_light_surfaces(
+        self,
+        tile_size: int,
+    ) -> tuple[pygame.Surface, pygame.Surface]:
+        cached = self._night_light_cache.get(tile_size)
+        if cached is not None:
+            return cached
+
+        radius = tile_size * 4
+        diameter = radius * 2
+        relief = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+        warm = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+        center = radius - 0.5
+        for y in range(diameter):
+            for x in range(diameter):
+                distance = ((x - center) ** 2 + (y - center) ** 2) ** 0.5
+                if distance >= radius:
+                    continue
+                normalized = distance / radius
+                intensity = (1.0 - normalized) ** 2
+                relief.set_at((x, y), (0, 0, 0, int(190 * intensity)))
+                warm.set_at(
+                    (x, y),
+                    (255, 174, 72, int(72 * intensity)),
+                )
+
+        self._night_light_cache[tile_size] = (relief, warm)
+        return relief, warm
+
+    def _draw_map_overlay(
+        self,
+        screen: pygame.Surface,
+        view_rect: pygame.Rect,
+        vehicles: list[Vehicle],
+        selected_vehicle_id: int | None,
+        simulation_status: SimulationStatus,
+        placement_vehicle_type: VehicleType,
+        placement_plan: VehiclePlan,
+    ) -> None:
+        if view_rect.width < 420 or view_rect.height < 260:
+            return
+
+        if simulation_status == SimulationStatus.PLACING_VEHICLE:
+            mode_text = (
+                "PLACEMENT: "
+                f"{placement_vehicle_type.value} / {placement_plan.value} - click a valid cell"
+            )
+            self._draw_overlay_box(
+                screen,
+                [mode_text],
+                pygame.Rect(view_rect.left + 14, view_rect.top + 14, 0, 0),
+                accent=(90, 165, 220),
+            )
+
+    def _draw_overlay_box(
+        self,
+        screen: pygame.Surface,
+        lines: list[str],
+        anchor: pygame.Rect,
+        accent: tuple[int, int, int],
+    ) -> None:
+        rendered = [self.font.render(line, True, WHITE) for line in lines]
+        width = max(text.get_width() for text in rendered) + 20
+        height = len(rendered) * 18 + 14
+        rect = pygame.Rect(anchor.left, anchor.top, width, height)
+        pygame.draw.rect(screen, (12, 15, 20), rect, border_radius=6)
+        pygame.draw.rect(screen, accent, rect, 2, border_radius=6)
+        for index, text in enumerate(rendered):
+            screen.blit(text, (rect.left + 10, rect.top + 8 + index * 18))
+
+
+def _darken(color: tuple[int, int, int], amount: int) -> tuple[int, int, int]:
+    return tuple(max(0, component - amount) for component in color)

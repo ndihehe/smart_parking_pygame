@@ -120,6 +120,7 @@ class VehicleManager:
                     )
 
                     if passable:
+                        previous_position = vehicle.position
                         if len(vehicle.path) > 1:
                             current_delta = (
                                 next_cell[0] - vehicle.position[0],
@@ -136,7 +137,13 @@ class VehicleManager:
                             )
                         else:
                             vehicle.direction = "STRAIGHT"
+                        vehicle.heading = self._heading_from_positions(
+                            previous_position,
+                            next_cell,
+                        )
                         vehicle.position = next_cell
+                        vehicle.render_from = previous_position
+                        vehicle.render_progress = 0.0
                         occupied_positions.add(vehicle.position)
                         vehicle.path.pop(0)
                         if not vehicle.path:
@@ -165,5 +172,25 @@ class VehicleManager:
                     occupied_positions.add(vehicle.position)
 
         for vehicle in self.vehicles.values():
+            if vehicle.render_progress < 1.0:
+                vehicle.render_progress = min(
+                    1.0,
+                    vehicle.render_progress + delta_time / VEHICLE_MOVE_INTERVAL,
+                )
             if vehicle.status in (VehicleStatus.WAITING, VehicleStatus.REROUTING):
                 vehicle.wait_time += delta_time
+
+    @staticmethod
+    def _heading_from_positions(
+        start: tuple[int, int],
+        end: tuple[int, int],
+    ) -> str:
+        row_delta = end[0] - start[0]
+        col_delta = end[1] - start[1]
+        if row_delta < 0:
+            return "north"
+        if row_delta > 0:
+            return "south"
+        if col_delta < 0:
+            return "west"
+        return "east"

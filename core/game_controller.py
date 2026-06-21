@@ -50,6 +50,8 @@ class GameController:
         self._vehicle_plans: dict[int, VehiclePlan] = {}
         self.simulation_speed = 1.0
         self.step_mode_enabled = False
+        self.night_mode = False
+        self.sidebar_view = "simulation"
         self._step_requested = False
         self._step_history: list[dict[str, object]] = []
         self._manual_snapshots: dict[int, dict[str, object]] = {}
@@ -204,6 +206,17 @@ class GameController:
         self.active_scenario = "Manual Placement"
         Logger.log("[GameController] Manual vehicle placement enabled")
 
+    def toggle_vehicle_placement(self) -> None:
+        if self.simulation_status == SimulationStatus.PLACING_VEHICLE:
+            self.simulation_status = (
+                SimulationStatus.READY
+                if self.vehicle_manager.get_all_vehicles()
+                else SimulationStatus.IDLE
+            )
+            Logger.log("[GameController] Manual vehicle placement finished")
+            return
+        self.begin_vehicle_placement()
+
     def set_placement_vehicle_type(self, vehicle_type: VehicleType) -> None:
         self.placement_vehicle_type = vehicle_type
         Logger.log(f"[GameController] Placement vehicle type -> {vehicle_type.value}")
@@ -233,7 +246,6 @@ class GameController:
                 self.map_manager.get_state(),
             )
         self._vehicle_plans[vehicle.id] = self.placement_plan
-        self.simulation_status = SimulationStatus.READY
         Logger.log(
             f"[GameController] Vehicle #{vehicle.id} placed at {position} "
             f"as {self.placement_plan.value}"
@@ -251,6 +263,17 @@ class GameController:
             self.simulation_speed = 1.0
         status = "enabled" if self.step_mode_enabled else "disabled"
         Logger.log(f"[GameController] Step mode {status}")
+
+    def toggle_night_mode(self) -> None:
+        self.night_mode = not self.night_mode
+        mode = "night" if self.night_mode else "day"
+        Logger.log(f"[GameController] Lighting mode -> {mode}")
+
+    def set_sidebar_view(self, view: str) -> None:
+        if view not in {"simulation", "add_vehicle", "scenarios"}:
+            return
+        self.sidebar_view = view
+        Logger.log(f"[GameController] Sidebar view -> {view}")
 
     def request_next_step(self) -> None:
         if self.simulation_status == SimulationStatus.READY:
@@ -487,7 +510,10 @@ class GameController:
             and slot_available
         ):
             old_position = vehicle.position
+            vehicle.heading = self._manual_heading(direction)
             vehicle.position = new_position
+            vehicle.render_from = old_position
+            vehicle.render_progress = 0.0
             if old_position in self.map_manager.get_state().dynamic_blocks:
                 self.map_manager.remove_dynamic_block(old_position)
                 vehicle.wait_time = 0.0
@@ -501,6 +527,16 @@ class GameController:
             Logger.log(
                 f"[GameController] Vehicle #{vehicle.id} cannot move to {new_position}"
             )
+
+    @staticmethod
+    def _manual_heading(direction: tuple[int, int]) -> str:
+        headings = {
+            (-1, 0): "north",
+            (1, 0): "south",
+            (0, -1): "west",
+            (0, 1): "east",
+        }
+        return headings.get(direction, "east")
 
     def _update_manual_vehicle_timers(self, delta_time: float) -> None:
         for vehicle in self.vehicle_manager.get_all_vehicles():
@@ -767,7 +803,7 @@ class GameController:
 
     def _try_start_tandem_inner_exit(self, vehicle: Vehicle) -> bool:
         map_state = self.map_manager.get_state()
-        outer_slot = map_state.motorbike_inner_to_outer.get(vehicle.position)
+        outer_slot = self._tandem_inner_to_outer(vehicle.type).get(vehicle.position)
         if outer_slot is None:
             return False
         if vehicle.id in self._tandem_exit_jobs:
@@ -786,7 +822,7 @@ class GameController:
             temp_position = outer_slot
             Logger.log(
                 f"[Guard] No temporary cell near {outer_slot}; holding outer "
-                f"motorbike #{outer_vehicle.id} aside in place"
+                f"vehicle #{outer_vehicle.id} aside in place"
             )
 
         self.parking_manager.release_vehicle_slot(outer_vehicle, map_state)
@@ -804,7 +840,7 @@ class GameController:
                 map_state,
             )
             Logger.log(
-                f"[Guard] Cannot move outer motorbike #{outer_vehicle.id} away from {outer_slot}"
+                f"[Guard] Cannot move outer vehicle #{outer_vehicle.id} away from {outer_slot}"
             )
             return True
 
@@ -821,7 +857,7 @@ class GameController:
             "phase": "OUTER_MOVING_OUT",
         }
         Logger.log(
-            f"[Guard] Assisting inner motorbike #{vehicle.id}: moving outer "
+            f"[Guard] Assisting inner vehicle #{vehicle.id}: moving outer "
             f"#{outer_vehicle.id} to {temp_position}"
         )
         return True
@@ -849,7 +885,7 @@ class GameController:
                 outer_vehicle.wait_reason = WaitReason.GUARD_ESCORT
                 if inner_vehicle is not None:
                     Logger.log(
-                        f"[Guard] Outer motorbike #{outer_id} cleared access; "
+                        f"[Guard] Outer vehicle #{outer_id} cleared access; "
                         f"inner #{inner_id} can exit"
                     )
                     self._tandem_exit_jobs[inner_id]["phase"] = "INNER_EXITING"
@@ -885,7 +921,7 @@ class GameController:
                     outer_vehicle.wait_reason = WaitReason.GUARD_ESCORT
                     self._tandem_exit_jobs[inner_id]["phase"] = "OUTER_RETURNING_INNER"
                     Logger.log(
-                        f"[Guard] Returning outer motorbike #{outer_id} to inner slot {inner_slot}"
+                        f"[Guard] Returning outer vehicle #{outer_id} to inner slot {inner_slot}"
                     )
                 else:
                     outer_vehicle.position = inner_slot
@@ -894,7 +930,7 @@ class GameController:
                     outer_vehicle.wait_reason = WaitReason.GUARD_ESCORT
                     self._tandem_exit_jobs[inner_id]["phase"] = "OUTER_RETURNING_INNER"
                     Logger.log(
-                        f"[Guard] Directly repositioned outer motorbike #{outer_id} "
+                        f"[Guard] Directly repositioned outer vehicle #{outer_id} "
                         f"to inner slot {inner_slot}"
                     )
 
@@ -947,7 +983,8 @@ class GameController:
             if slot is None:
                 return self.map_manager.is_drive_cell(position)
             return (
-                slot.slot_type == VehicleType.MOTORBIKE
+                slot.slot_type
+                == self.map_manager.get_state().parking_slots[outer_slot].slot_type
                 and not slot.is_occupied
                 and not slot.is_reserved
                 and position != inner_slot
@@ -1008,7 +1045,8 @@ class GameController:
         slot: tuple[int, int],
         vehicle_id: int,
     ) -> list[tuple[int, int]]:
-        outer_slot = self.map_manager.get_state().motorbike_inner_to_outer.get(slot)
+        slot_type = self.map_manager.get_state().parking_slots[slot].slot_type
+        outer_slot = self._tandem_inner_to_outer(slot_type).get(slot)
         if outer_slot is None:
             return find_path(
                 self.current_algorithm,
@@ -1035,7 +1073,9 @@ class GameController:
         goal: tuple[int, int],
         vehicle_id: int,
     ) -> list[tuple[int, int]]:
-        outer_slot = self.map_manager.get_state().motorbike_inner_to_outer.get(start)
+        start_slot = self.map_manager.get_state().parking_slots.get(start)
+        slot_type = start_slot.slot_type if start_slot is not None else None
+        outer_slot = self._tandem_inner_to_outer(slot_type).get(start)
         if outer_slot is None:
             return find_path(
                 self.current_algorithm,
@@ -1059,6 +1099,15 @@ class GameController:
         if not path_from_outer:
             return []
         return [outer_slot] + path_from_outer
+
+    def _tandem_inner_to_outer(
+        self,
+        vehicle_type: VehicleType | None,
+    ) -> dict[tuple[int, int], tuple[int, int]]:
+        map_state = self.map_manager.get_state()
+        if vehicle_type == VehicleType.CAR:
+            return map_state.car_inner_to_outer
+        return map_state.motorbike_inner_to_outer
 
     def _vehicle_at(self, position: tuple[int, int]) -> Vehicle | None:
         return next(
@@ -1212,6 +1261,16 @@ class GameController:
 
         if has_active_block:
             self.map_manager.remove_dynamic_block(vehicle.position)
+
+        if self._is_exiting_vehicle(vehicle):
+            self._manual_snapshots.pop(vehicle.id, None)
+            Logger.log(
+                f"[Guard] Guard #{guard.id} redirecting exiting Vehicle "
+                f"#{vehicle.id} to the exit"
+            )
+            self.start_exit(vehicle.id)
+            self._return_guard_home(guard)
+            return
 
         self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
         self.vehicle_manager.set_wait_reason(vehicle.id, WaitReason.GUARD_ESCORT)

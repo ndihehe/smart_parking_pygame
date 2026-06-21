@@ -3,51 +3,70 @@ import unittest
 from ai.pathfinding.router import find_path
 from core.game_controller import GameController
 from models.enums import AlgorithmType, VehicleType
+from utils.grid_utils import get_neighbors
 
 
 MAP_PATH = "data/maps/default_map.txt"
 
 
 class TestPathfinding(unittest.TestCase):
+    def _route_endpoints(self, gc: GameController):
+        state = gc.map_manager.get_state()
+        return state.entry_gates[0], state.exit_gates[0]
+
     def test_bfs_finds_path(self) -> None:
         gc = GameController(MAP_PATH)
-        path = find_path("bfs", (0, 0), (3, 1), gc.map_manager)
+        start, goal = self._route_endpoints(gc)
+        path = find_path("bfs", start, goal, gc.map_manager)
         self.assertTrue(path)
-        self.assertEqual(path[-1], (3, 1))
+        self.assertEqual(path[-1], goal)
 
     def test_dfs_finds_path(self) -> None:
         gc = GameController(MAP_PATH)
-        path = find_path("dfs", (0, 0), (3, 1), gc.map_manager)
+        start, goal = self._route_endpoints(gc)
+        path = find_path("dfs", start, goal, gc.map_manager)
         self.assertTrue(path)
-        self.assertEqual(path[-1], (3, 1))
+        self.assertEqual(path[-1], goal)
 
     def test_greedy_finds_path(self) -> None:
         gc = GameController(MAP_PATH)
-        path = find_path("greedy", (0, 0), (3, 1), gc.map_manager)
+        start, goal = self._route_endpoints(gc)
+        path = find_path("greedy", start, goal, gc.map_manager)
         self.assertTrue(path)
-        self.assertEqual(path[-1], (3, 1))
+        self.assertEqual(path[-1], goal)
 
     def test_astar_finds_path(self) -> None:
         gc = GameController(MAP_PATH)
-        path = find_path(AlgorithmType.ASTAR, (0, 0), (3, 1), gc.map_manager)
+        start, goal = self._route_endpoints(gc)
+        path = find_path(AlgorithmType.ASTAR, start, goal, gc.map_manager)
         self.assertTrue(path)
-        self.assertEqual(path[-1], (3, 1))
+        self.assertEqual(path[-1], goal)
 
     def test_pathfinding_avoids_blocked_vehicle_positions(self) -> None:
         gc = GameController(MAP_PATH)
-        path = find_path("astar", (0, 0), (3, 1), gc.map_manager, {(1, 0)})
-        self.assertNotIn((1, 0), path)
-        self.assertEqual(path[-1], (3, 1))
+        start, goal = self._route_endpoints(gc)
+        initial_path = find_path("astar", start, goal, gc.map_manager)
+        blocked = initial_path[0]
+        path = find_path("astar", start, goal, gc.map_manager, {blocked})
+        self.assertNotIn(blocked, path)
+        self.assertEqual(path[-1], goal)
 
     def test_blocked_positions_can_prevent_path(self) -> None:
         gc = GameController(MAP_PATH)
-        path = find_path("bfs", (0, 0), (3, 1), gc.map_manager, {(0, 1), (1, 0)})
+        start, goal = self._route_endpoints(gc)
+        blocked = {
+            neighbor
+            for neighbor in get_neighbors(start, gc.map_manager.state.rows, gc.map_manager.state.cols)
+            if gc.map_manager.is_drive_cell(neighbor)
+        }
+        path = find_path("bfs", start, goal, gc.map_manager, blocked)
         self.assertEqual(path, [])
 
     def test_invalid_algorithm_name_raises(self) -> None:
         gc = GameController(MAP_PATH)
         with self.assertRaises(ValueError):
-            find_path("dijkstra", (0, 0), (3, 1), gc.map_manager)
+            start, goal = self._route_endpoints(gc)
+            find_path("dijkstra", start, goal, gc.map_manager)
 
     def test_game_controller_uses_runtime_algorithm(self) -> None:
         gc = GameController(MAP_PATH, algorithm="bfs")

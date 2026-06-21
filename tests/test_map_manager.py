@@ -8,29 +8,32 @@ MAP_PATH = "data/maps/default_map.txt"
 
 
 class TestMapManager(unittest.TestCase):
-    def test_map_20x32_loads(self) -> None:
+    def test_map_20x20_loads(self) -> None:
         gc = GameController(MAP_PATH)
         state = gc.map_manager.get_state()
         self.assertEqual(state.rows, 20)
-        self.assertEqual(state.cols, 32)
+        self.assertEqual(state.cols, 20)
         self.assertGreaterEqual(len(state.gate_cells), 2)
         self.assertGreater(len(state.parking_slots), 0)
 
-    def test_slot_rows_have_20_positions_each(self) -> None:
+    def test_slot_rows_match_current_layout(self) -> None:
         gc = GameController(MAP_PATH)
         grid = gc.map_manager.get_state().grid
-        car_rows = [row for row in grid if sum(cell == CellType.CAR_SLOT for cell in row) == 20]
-        moto_rows = [row for row in grid if sum(cell == CellType.MOTO_SLOT for cell in row) == 20]
-        self.assertEqual(len(car_rows), 2)
-        self.assertEqual(len(moto_rows), 2)
+        car_rows = [sum(cell == CellType.CAR_SLOT for cell in row) for row in grid]
+        moto_rows = [sum(cell == CellType.MOTO_SLOT for cell in row) for row in grid]
+        self.assertEqual([count for count in car_rows if count], [14, 14, 14, 14])
+        self.assertEqual([count for count in moto_rows if count], [18, 18, 18, 18])
 
     def test_map_static_indexes_are_cached(self) -> None:
         gc = GameController(MAP_PATH)
         state = gc.map_manager.get_state()
-        self.assertEqual(len(state.car_slots), 40)
-        self.assertEqual(len(state.motorbike_slots), 40)
-        self.assertEqual(state.entry_gates, [(0, 0), (19, 0)])
-        self.assertEqual(state.exit_gates, [(0, 31), (19, 31)])
+        self.assertEqual(len(state.car_slots), 56)
+        self.assertEqual(len(state.motorbike_slots), 72)
+        self.assertEqual(state.entry_gates, [(8, 0), (9, 0)])
+        self.assertEqual(state.exit_gates, [(8, 19), (9, 19)])
+        self.assertEqual(len(state.lamp_cells), 26)
+        self.assertGreater(len(state.car_inner_to_outer), 0)
+        self.assertGreater(len(state.motorbike_inner_to_outer), 0)
         self.assertGreater(len(state.intersection_cells), 0)
         for intersection in state.intersection_cells:
             self.assertIn(intersection, state.intersection_neighbors)

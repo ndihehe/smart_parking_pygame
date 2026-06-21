@@ -22,15 +22,14 @@ class ParkingManager:
                 continue
             if slot.is_reserved and slot.reserved_by != vehicle.id:
                 continue
-            if not self._motorbike_access_available(vehicle, position, map_state):
+            if not self._tandem_access_available(vehicle, position, map_state):
                 continue
             if position in map_state.dynamic_blocks:
                 continue
 
             score = score_slot(vehicle, slot.position, map_state)
             if (
-                vehicle.type == VehicleType.MOTORBIKE
-                and position in map_state.motorbike_inner_to_outer
+                position in self._inner_to_outer(vehicle, map_state)
             ):
                 score -= 1000
 
@@ -58,8 +57,9 @@ class ParkingManager:
             self.release_vehicle_slot(vehicle, map_state)
         map_state.parking_slots[position].is_reserved = True
         map_state.parking_slots[position].reserved_by = vehicle.id
-        if vehicle.type == VehicleType.MOTORBIKE and position in map_state.motorbike_inner_to_outer:
-            outer_position = map_state.motorbike_inner_to_outer[position]
+        inner_to_outer = self._inner_to_outer(vehicle, map_state)
+        if position in inner_to_outer:
+            outer_position = inner_to_outer[position]
             outer_slot = map_state.parking_slots.get(outer_position)
             if outer_slot is not None and not outer_slot.is_occupied:
                 outer_slot.is_reserved = True
@@ -101,16 +101,13 @@ class ParkingManager:
         slot.occupied_by = vehicle.id
         vehicle.assigned_slot = position
 
-    def _motorbike_access_available(
+    def _tandem_access_available(
         self,
         vehicle: Vehicle,
         position: tuple[int, int],
         map_state: MapState,
     ) -> bool:
-        if vehicle.type != VehicleType.MOTORBIKE:
-            return True
-
-        outer_position = map_state.motorbike_inner_to_outer.get(position)
+        outer_position = self._inner_to_outer(vehicle, map_state).get(position)
         if outer_position is None:
             return True
 
@@ -131,7 +128,7 @@ class ParkingManager:
         if assigned_slot is None:
             return
 
-        outer_position = map_state.motorbike_inner_to_outer.get(assigned_slot)
+        outer_position = self._inner_to_outer(vehicle, map_state).get(assigned_slot)
         if outer_position is None:
             return
 
@@ -139,6 +136,15 @@ class ParkingManager:
         if outer_slot is not None and outer_slot.reserved_by == vehicle.id and not outer_slot.is_occupied:
             outer_slot.is_reserved = False
             outer_slot.reserved_by = None
+
+    @staticmethod
+    def _inner_to_outer(
+        vehicle: Vehicle,
+        map_state: MapState,
+    ) -> dict[tuple[int, int], tuple[int, int]]:
+        if vehicle.type == VehicleType.CAR:
+            return map_state.car_inner_to_outer
+        return map_state.motorbike_inner_to_outer
 
     def validate_parking(self, vehicle: Vehicle, map_state: MapState) -> str:
         position = vehicle.position

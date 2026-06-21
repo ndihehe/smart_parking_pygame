@@ -24,6 +24,7 @@ class MapManager:
         parking_slots: dict[tuple[int, int], ParkingSlot] = {}
         static_obstacles: set[tuple[int, int]] = set()
         intersection_cells: list[tuple[int, int]] = []
+        lamp_cells: list[tuple[int, int]] = []
         car_slots: list[tuple[int, int]] = []
         motorbike_slots: list[tuple[int, int]] = []
 
@@ -40,6 +41,9 @@ class MapManager:
                         gate_cells.append(position)
                     elif cell_type == CellType.INTERSECTION:
                         intersection_cells.append(position)
+                    elif cell_type == CellType.LAMP:
+                        lamp_cells.append(position)
+                        static_obstacles.add(position)
                     elif cell_type == CellType.PARKING_SLOT:
                         parking_slots[position] = ParkingSlot(position, None)
                         car_slots.append(position)
@@ -50,13 +54,22 @@ class MapManager:
                     elif cell_type == CellType.MOTO_SLOT:
                         parking_slots[position] = ParkingSlot(position, VehicleType.MOTORBIKE)
                         motorbike_slots.append(position)
-                    elif cell_type == CellType.OBSTACLE:
+                    elif cell_type in {CellType.OBSTACLE, CellType.TREE}:
                         static_obstacles.add(position)
 
                 grid.append(row)
 
         rows = len(grid)
         cols = len(grid[0]) if rows > 0 else 0
+        (
+            parking_slots,
+            car_slots,
+            motorbike_slots,
+            car_outer_to_inner,
+            car_inner_to_outer,
+            motorbike_outer_to_inner,
+            motorbike_inner_to_outer,
+        ) = self._build_reachable_parking_slots(grid, rows, cols)
         last_col = cols - 1
         entry_gates = sorted(gate for gate in gate_cells if gate[1] == 0)[:2]
         exit_gates = sorted(gate for gate in gate_cells if gate[1] == last_col)[:2]
@@ -73,11 +86,16 @@ class MapManager:
             static_obstacles=static_obstacles,
             dynamic_blocks=set(),
             intersection_cells=intersection_cells,
+            lamp_cells=lamp_cells,
             intersection_neighbors=intersection_neighbors,
             entry_gates=entry_gates,
             exit_gates=exit_gates,
             car_slots=car_slots,
             motorbike_slots=motorbike_slots,
+            car_outer_to_inner=car_outer_to_inner,
+            car_inner_to_outer=car_inner_to_outer,
+            motorbike_outer_to_inner=motorbike_outer_to_inner,
+            motorbike_inner_to_outer=motorbike_inner_to_outer,
         )
         self._validate_connectivity()
         Logger.log(f"[MapManager] Map loaded: {rows}x{cols}")
@@ -91,6 +109,7 @@ class MapManager:
         parking_slots: dict[tuple[int, int], ParkingSlot] = {}
         static_obstacles: set[tuple[int, int]] = set()
         intersection_cells: list[tuple[int, int]] = []
+        lamp_cells: list[tuple[int, int]] = []
         car_slots: list[tuple[int, int]] = []
         motorbike_slots: list[tuple[int, int]] = []
 
@@ -105,6 +124,9 @@ class MapManager:
                     gate_cells.append(position)
                 elif cell_type == CellType.INTERSECTION:
                     intersection_cells.append(position)
+                elif cell_type == CellType.LAMP:
+                    lamp_cells.append(position)
+                    static_obstacles.add(position)
                 elif cell_type == CellType.PARKING_SLOT:
                     parking_slots[position] = ParkingSlot(position, None)
                     car_slots.append(position)
@@ -115,7 +137,7 @@ class MapManager:
                 elif cell_type == CellType.MOTO_SLOT:
                     parking_slots[position] = ParkingSlot(position, VehicleType.MOTORBIKE)
                     motorbike_slots.append(position)
-                elif cell_type in {CellType.OBSTACLE, CellType.BLOCKED}:
+                elif cell_type in {CellType.OBSTACLE, CellType.BLOCKED, CellType.TREE}:
                     static_obstacles.add(position)
 
             grid.append(row)
@@ -126,6 +148,8 @@ class MapManager:
             parking_slots,
             car_slots,
             motorbike_slots,
+            car_outer_to_inner,
+            car_inner_to_outer,
             motorbike_outer_to_inner,
             motorbike_inner_to_outer,
         ) = self._build_reachable_parking_slots(
@@ -134,12 +158,12 @@ class MapManager:
             cols,
         )
         last_col = cols - 1
-        entry_gates = sorted(gate for gate in gate_cells if gate[1] == 0)[:4]
-        exit_gates = sorted(gate for gate in gate_cells if gate[1] == last_col)[:4]
+        entry_gates = sorted(gate for gate in gate_cells if gate[1] == 0)[:2]
+        exit_gates = sorted(gate for gate in gate_cells if gate[1] == last_col)[:2]
         if not entry_gates:
-            entry_gates = sorted(gate_cells)[:4]
+            entry_gates = sorted(gate_cells)[:2]
         if not exit_gates:
-            exit_gates = sorted(gate_cells, reverse=True)[:4]
+            exit_gates = sorted(gate_cells, reverse=True)[:2]
 
         intersection_neighbors = {
             position: get_neighbors(position, rows, cols)
@@ -154,11 +178,14 @@ class MapManager:
             static_obstacles=static_obstacles,
             dynamic_blocks=set(),
             intersection_cells=intersection_cells,
+            lamp_cells=lamp_cells,
             intersection_neighbors=intersection_neighbors,
             entry_gates=entry_gates,
             exit_gates=exit_gates,
             car_slots=car_slots,
             motorbike_slots=motorbike_slots,
+            car_outer_to_inner=car_outer_to_inner,
+            car_inner_to_outer=car_inner_to_outer,
             motorbike_outer_to_inner=motorbike_outer_to_inner,
             motorbike_inner_to_outer=motorbike_inner_to_outer,
             image_path=payload.get("image_path"),
@@ -180,18 +207,30 @@ class MapManager:
         list[tuple[int, int]],
         dict[tuple[int, int], tuple[int, int]],
         dict[tuple[int, int], tuple[int, int]],
+        dict[tuple[int, int], tuple[int, int]],
+        dict[tuple[int, int], tuple[int, int]],
     ]:
         parking_slots: dict[tuple[int, int], ParkingSlot] = {}
         car_slots: list[tuple[int, int]] = []
         motorbike_slots: list[tuple[int, int]] = []
+        car_outer_to_inner: dict[tuple[int, int], tuple[int, int]] = {}
+        car_inner_to_outer: dict[tuple[int, int], tuple[int, int]] = {}
         motorbike_outer_to_inner: dict[tuple[int, int], tuple[int, int]] = {}
         motorbike_inner_to_outer: dict[tuple[int, int], tuple[int, int]] = {}
         drive_types = {CellType.GATE, CellType.ROAD, CellType.INTERSECTION}
-        motorbike_cells = {
-            (row_index, col_index)
-            for row_index, row in enumerate(grid)
-            for col_index, cell_type in enumerate(row)
-            if cell_type == CellType.MOTO_SLOT
+        tandem_cells = {
+            CellType.CAR_SLOT: {
+                (row_index, col_index)
+                for row_index, row in enumerate(grid)
+                for col_index, cell_type in enumerate(row)
+                if cell_type == CellType.CAR_SLOT
+            },
+            CellType.MOTO_SLOT: {
+                (row_index, col_index)
+                for row_index, row in enumerate(grid)
+                for col_index, cell_type in enumerate(row)
+                if cell_type == CellType.MOTO_SLOT
+            },
         }
 
         for row_index, row in enumerate(grid):
@@ -219,14 +258,23 @@ class MapManager:
                         continue
                     parking_slots[position] = ParkingSlot(position, VehicleType.CAR)
                     car_slots.append(position)
+                    inner_slot = self._find_inner_slot(
+                        position, tandem_cells[CellType.CAR_SLOT], grid,
+                        rows, cols, drive_types,
+                    )
+                    if inner_slot is not None and inner_slot not in parking_slots:
+                        parking_slots[inner_slot] = ParkingSlot(inner_slot, VehicleType.CAR)
+                        car_slots.append(inner_slot)
+                        car_outer_to_inner[position] = inner_slot
+                        car_inner_to_outer[inner_slot] = position
                 elif cell_type == CellType.MOTO_SLOT:
                     if not touches_drive_cell:
                         continue
                     parking_slots[position] = ParkingSlot(position, VehicleType.MOTORBIKE)
                     motorbike_slots.append(position)
-                    inner_slot = self._find_inner_motorbike_slot(
+                    inner_slot = self._find_inner_slot(
                         position,
-                        motorbike_cells,
+                        tandem_cells[CellType.MOTO_SLOT],
                         grid,
                         rows,
                         cols,
@@ -242,14 +290,16 @@ class MapManager:
             parking_slots,
             car_slots,
             motorbike_slots,
+            car_outer_to_inner,
+            car_inner_to_outer,
             motorbike_outer_to_inner,
             motorbike_inner_to_outer,
         )
 
-    def _find_inner_motorbike_slot(
+    def _find_inner_slot(
         self,
         outer_slot: tuple[int, int],
-        motorbike_cells: set[tuple[int, int]],
+        same_type_cells: set[tuple[int, int]],
         grid: list[list[CellType]],
         rows: int,
         cols: int,
@@ -257,7 +307,7 @@ class MapManager:
     ) -> tuple[int, int] | None:
         inner_candidates: list[tuple[int, int]] = []
         for neighbor in get_neighbors(outer_slot, rows, cols):
-            if neighbor not in motorbike_cells:
+            if neighbor not in same_type_cells:
                 continue
             touches_drive = any(
                 grid[neighbor_row][neighbor_col] in drive_types
@@ -364,7 +414,10 @@ class MapManager:
                 neighbor in reachable
                 for neighbor in get_neighbors(position, self.state.rows, self.state.cols)
             )
-            outer_slot = self.state.motorbike_inner_to_outer.get(position)
+            outer_slot = (
+                self.state.car_inner_to_outer.get(position)
+                or self.state.motorbike_inner_to_outer.get(position)
+            )
             if outer_slot is not None:
                 reaches_slot = reaches_slot or outer_slot in reachable or any(
                     neighbor in reachable

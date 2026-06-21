@@ -36,12 +36,18 @@ class TrafficController:
             if vehicle.status == VehicleStatus.WAITING:
                 waiting_by_position.setdefault(vehicle.position, []).append(vehicle)
 
+        processed_waiting_vehicle_ids: set[int] = set()
         for intersection in map_state.intersection_cells:
             neighbors = map_state.intersection_neighbors[intersection]
             waiting_vehicles: list[Vehicle] = []
             waiting_vehicles.extend(waiting_by_position.get(intersection, []))
             for neighbor in neighbors:
                 waiting_vehicles.extend(waiting_by_position.get(neighbor, []))
+            waiting_vehicles = [
+                vehicle
+                for vehicle in waiting_vehicles
+                if vehicle.id not in processed_waiting_vehicle_ids
+            ]
 
             if waiting_vehicles:
                 self._intersection_timers[intersection] = (
@@ -59,13 +65,17 @@ class TrafficController:
             ):
                 for vehicle in waiting_vehicles:
                     vehicle.wait_reason = WaitReason.TRAFFIC_CONGESTION
-        self._handle_congestion(
+                self._handle_congestion(
                     intersection,
                     waiting_vehicles,
                     map_manager,
                     occupied_positions,
                     algorithm,
                 )
+
+            processed_waiting_vehicle_ids.update(
+                vehicle.id for vehicle in waiting_vehicles
+            )
 
         targets: dict[tuple[int, int], list[Vehicle]] = {}
         for vehicle in vehicles:

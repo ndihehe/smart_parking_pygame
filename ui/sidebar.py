@@ -23,6 +23,10 @@ ACTION_SPEED_SLOW = "speed_slow"
 ACTION_STEP_MODE = "step_mode"
 ACTION_NEXT_STEP = "next_step"
 ACTION_PREVIOUS_STEP = "previous_step"
+ACTION_TOGGLE_NIGHT = "toggle_night"
+ACTION_VIEW_SIMULATION = "view_simulation"
+ACTION_VIEW_ADD_VEHICLE = "view_add_vehicle"
+ACTION_VIEW_SCENARIOS = "view_scenarios"
 ACTION_MAIN_MENU = "main_menu"
 ACTION_ALGORITHM_PREFIX = "algorithm:"
 
@@ -39,6 +43,8 @@ ALGORITHM_BUTTONS = [
     ("GREEDY", AlgorithmType.GREEDY),
     ("A*", AlgorithmType.ASTAR),
 ]
+
+_TITLE_FONTS: dict[int, pygame.font.Font] = {}
 
 
 def algorithm_label(algorithm: str | AlgorithmType | None) -> str:
@@ -59,6 +65,8 @@ def sidebar_action_at_position(
     placement_plan: VehiclePlan,
     simulation_speed: float = 1.0,
     step_mode_enabled: bool = False,
+    night_mode: bool = False,
+    sidebar_view: str = "simulation",
 ) -> str | None:
     for button in build_sidebar_buttons(
         screen_size,
@@ -69,6 +77,8 @@ def sidebar_action_at_position(
         placement_plan,
         simulation_speed,
         step_mode_enabled,
+        night_mode,
+        sidebar_view,
     ):
         if button.enabled and button.rect.collidepoint(position):
             return button.action
@@ -88,6 +98,8 @@ def draw_sidebar(
     active_scenario: str | None,
     simulation_speed: float = 1.0,
     step_mode_enabled: bool = False,
+    night_mode: bool = False,
+    sidebar_view: str = "simulation",
     pathfinding_metrics: dict[str, AlgorithmMetrics] | None = None,
 ) -> None:
     panel_rect = get_control_panel_rect(screen.get_size(), map_state)
@@ -103,39 +115,28 @@ def draw_sidebar(
     y = 12 if compact else 24
     title_height = _draw_title(screen, font, font_small, x, y, width, compact)
     y += title_height + (10 if compact else 16)
-
-    y = _draw_section(screen, font_small, "Algorithm", x, y, compact)
-    for button in _algorithm_buttons(
+    groups, y = _contextual_sidebar_groups(
         x,
         y,
         width,
         current_algorithm,
-        button_height,
-        button_gap,
-    ):
-        button.draw(screen, font_small, mouse_pos)
-    y += (button_height + button_gap) * 2 + section_gap
-
-    y = _draw_section(screen, font_small, "Simulation Mode", x, y, compact)
-    for button in _mode_buttons(x, y, width, simulation_status, active_scenario, button_height):
-        button.draw(screen, font_small, mouse_pos)
-    y += button_height + section_gap
-
-    y = _draw_section(screen, font_small, "Controls", x, y, compact)
-    for button in _control_buttons(
-        x,
-        y,
-        width,
         simulation_status,
         placement_vehicle_type,
         placement_plan,
         simulation_speed,
         step_mode_enabled,
+        night_mode,
+        sidebar_view,
         button_height,
         button_gap,
-    ):
-        button.draw(screen, font_small, mouse_pos)
-    y += (button_height + button_gap) * 8 + section_gap
+        section_gap,
+        compact,
+        active_scenario,
+    )
+    for label, label_y, buttons in groups:
+        _draw_section(screen, font_small, label, x, label_y, compact)
+        for button in buttons:
+            button.draw(screen, font_small, mouse_pos)
 
     y = _draw_section(screen, font_small, "Algorithm Metrics", x, y, compact)
     metrics_x = max(panel_rect.left + 12, x - 10)
@@ -150,11 +151,18 @@ def draw_sidebar(
         metrics_width,
         compact,
     )
-
-    if not compact and y + 120 < panel_rect.bottom - 18:
-        y = _draw_section(screen, font_small, "Shortcuts", x, y + 12, compact)
-        _draw_shortcuts(screen, font_small, x, y)
-
+    available_chart_height = panel_rect.bottom - y - 16
+    if available_chart_height >= 150:
+        y = _draw_algorithm_charts(
+            screen,
+            font_small,
+            pathfinding_metrics or {},
+            current_algorithm,
+            metrics_x,
+            y,
+            metrics_width,
+            min(190, available_chart_height),
+        )
 
 def build_sidebar_buttons(
     screen_size: tuple[int, int],
@@ -165,6 +173,8 @@ def build_sidebar_buttons(
     placement_plan: VehiclePlan,
     simulation_speed: float = 1.0,
     step_mode_enabled: bool = False,
+    night_mode: bool = False,
+    sidebar_view: str = "simulation",
 ) -> list[UIButton]:
     panel_rect = get_control_panel_rect(screen_size, map_state)
     compact = panel_rect.height < COMPACT_HEIGHT_THRESHOLD
@@ -175,28 +185,268 @@ def build_sidebar_buttons(
     width = panel_rect.width - PANEL_PADDING * 2
     y = 12 if compact else 24
     y += (36 if compact else 46) + (10 if compact else 16)
-    y += 18 if compact else 24
-    buttons = _algorithm_buttons(x, y, width, current_algorithm, button_height, button_gap)
-    y += (button_height + button_gap) * 2 + section_gap
-    y += 18 if compact else 24
-    buttons.extend(_mode_buttons(x, y, width, simulation_status, None, button_height))
-    y += button_height + section_gap
-    y += 18 if compact else 24
-    buttons.extend(
-        _control_buttons(
+    groups, _end_y = _contextual_sidebar_groups(
+        x,
+        y,
+        width,
+        current_algorithm,
+        simulation_status,
+        placement_vehicle_type,
+        placement_plan,
+        simulation_speed,
+        step_mode_enabled,
+        night_mode,
+        sidebar_view,
+        button_height,
+        button_gap,
+        section_gap,
+        compact,
+        None,
+    )
+    return [button for _label, _label_y, buttons in groups for button in buttons]
+
+
+def _contextual_sidebar_groups(
+    x: int,
+    y: int,
+    width: int,
+    current_algorithm: str | AlgorithmType,
+    simulation_status: SimulationStatus,
+    placement_vehicle_type: VehicleType,
+    placement_plan: VehiclePlan,
+    simulation_speed: float,
+    step_mode_enabled: bool,
+    night_mode: bool,
+    sidebar_view: str,
+    button_height: int,
+    button_gap: int,
+    section_gap: int,
+    compact: bool,
+    active_scenario: str | None,
+) -> tuple[list[tuple[str, int, list[UIButton]]], int]:
+    groups: list[tuple[str, int, list[UIButton]]] = []
+    header_height = 18 if compact else 24
+
+    def add_group(label: str, buttons: list[UIButton], rows: int) -> None:
+        nonlocal y
+        groups.append((label, y, buttons))
+        y += header_height + rows * button_height + max(0, rows - 1) * button_gap
+        y += section_gap
+
+    add_group(
+        "Mode",
+        _view_buttons(x, y + header_height, width, sidebar_view, button_height, button_gap),
+        1,
+    )
+
+    content_y = y + header_height
+    if sidebar_view == "add_vehicle":
+        buttons = _add_vehicle_context_buttons(
             x,
-            y,
+            content_y,
             width,
             simulation_status,
             placement_vehicle_type,
             placement_plan,
+            button_height,
+            button_gap,
+        )
+        add_group("Vehicle Setup", buttons, 3)
+    elif sidebar_view == "scenarios":
+        buttons = _scenario_context_buttons(
+            x,
+            content_y,
+            width,
+            active_scenario,
+            button_height,
+        )
+        add_group("Scenarios", buttons, 1)
+    else:
+        buttons, rows = _simulation_context_buttons(
+            x,
+            content_y,
+            width,
+            current_algorithm,
             simulation_speed,
             step_mode_enabled,
             button_height,
             button_gap,
         )
+        add_group("Simulation", buttons, rows)
+
+    utility_y = y + header_height
+    add_group(
+        "General",
+        _utility_buttons(
+            x,
+            utility_y,
+            width,
+            night_mode,
+            button_height,
+            button_gap,
+        ),
+        2,
     )
-    return buttons
+    return groups, y
+
+
+def _view_buttons(
+    x: int,
+    y: int,
+    width: int,
+    sidebar_view: str,
+    button_height: int,
+    button_gap: int,
+) -> list[UIButton]:
+    labels = [
+        (ACTION_VIEW_SIMULATION, "Simulation", "simulation"),
+        (ACTION_VIEW_ADD_VEHICLE, "Add Vehicle", "add_vehicle"),
+        (ACTION_VIEW_SCENARIOS, "Scenarios", "scenarios"),
+    ]
+    button_width = (width - button_gap * 2) // 3
+    return [
+        UIButton(
+            action,
+            label,
+            pygame.Rect(x + index * (button_width + button_gap), y, button_width, button_height),
+            selected=sidebar_view == view,
+        )
+        for index, (action, label, view) in enumerate(labels)
+    ]
+
+
+def _simulation_context_buttons(
+    x: int,
+    y: int,
+    width: int,
+    current_algorithm: str | AlgorithmType,
+    simulation_speed: float,
+    step_mode_enabled: bool,
+    button_height: int,
+    button_gap: int,
+) -> tuple[list[UIButton], int]:
+    algorithms = _algorithm_buttons(
+        x, y, width, current_algorithm, button_height, button_gap
+    )
+    speed_y = y + (button_height + button_gap) * 2
+    third_width = (width - button_gap * 2) // 3
+    speed_buttons = [
+        UIButton(
+            ACTION_SPEED_SLOW,
+            "Slow",
+            pygame.Rect(x, speed_y, third_width, button_height),
+            selected=not step_mode_enabled and simulation_speed < 0.99,
+        ),
+        UIButton(
+            ACTION_SPEED_NORMAL,
+            "Normal",
+            pygame.Rect(x + third_width + button_gap, speed_y, third_width, button_height),
+            selected=not step_mode_enabled and simulation_speed >= 0.99,
+        ),
+        UIButton(
+            ACTION_STEP_MODE,
+            "Step",
+            pygame.Rect(x + (third_width + button_gap) * 2, speed_y, third_width, button_height),
+            selected=step_mode_enabled,
+        ),
+    ]
+    buttons = algorithms + speed_buttons
+    rows = 3
+    if step_mode_enabled:
+        step_y = speed_y + button_height + button_gap
+        half_width = (width - button_gap) // 2
+        buttons.extend(
+            [
+                UIButton(ACTION_PREVIOUS_STEP, "< Prev", pygame.Rect(x, step_y, half_width, button_height)),
+                UIButton(
+                    ACTION_NEXT_STEP,
+                    "Next >",
+                    pygame.Rect(x + half_width + button_gap, step_y, half_width, button_height),
+                ),
+            ]
+        )
+        rows = 4
+    return buttons, rows
+
+
+def _add_vehicle_context_buttons(
+    x: int,
+    y: int,
+    width: int,
+    simulation_status: SimulationStatus,
+    vehicle_type: VehicleType,
+    plan: VehiclePlan,
+    button_height: int,
+    button_gap: int,
+) -> list[UIButton]:
+    half_width = (width - button_gap) // 2
+    return [
+        UIButton(ACTION_TYPE_CAR, "Car", pygame.Rect(x, y, half_width, button_height), selected=vehicle_type == VehicleType.CAR),
+        UIButton(ACTION_TYPE_MOTORBIKE, "Motorbike", pygame.Rect(x + half_width + button_gap, y, half_width, button_height), selected=vehicle_type == VehicleType.MOTORBIKE),
+        UIButton(ACTION_PLAN_ENTERING, "Entering", pygame.Rect(x, y + button_height + button_gap, half_width, button_height), selected=plan == VehiclePlan.ENTERING),
+        UIButton(
+            ACTION_PLAN_EXITING,
+            "Exiting",
+            pygame.Rect(
+                x + half_width + button_gap,
+                y + button_height + button_gap,
+                half_width,
+                button_height,
+            ),
+            selected=plan == VehiclePlan.EXITING,
+            enabled=simulation_status == SimulationStatus.PLACING_VEHICLE,
+        ),
+        UIButton(
+            ACTION_PLACE,
+            "Finish Placement"
+            if simulation_status == SimulationStatus.PLACING_VEHICLE
+            else "Place on Map",
+            pygame.Rect(x, y + (button_height + button_gap) * 2, width, button_height),
+            selected=simulation_status == SimulationStatus.PLACING_VEHICLE,
+        ),
+    ]
+
+
+def _scenario_context_buttons(
+    x: int,
+    y: int,
+    width: int,
+    active_scenario: str | None,
+    button_height: int,
+) -> list[UIButton]:
+    return [
+        UIButton(
+            ACTION_TRAFFIC_JAM,
+            "Traffic Jam",
+            pygame.Rect(x, y, width, button_height),
+            selected=active_scenario == "Traffic Jam Mode",
+        )
+    ]
+
+
+def _utility_buttons(
+    x: int,
+    y: int,
+    width: int,
+    night_mode: bool,
+    button_height: int,
+    button_gap: int,
+) -> list[UIButton]:
+    half_width = (width - button_gap) // 2
+    return [
+        UIButton(ACTION_RESET, "Reset", pygame.Rect(x, y, half_width, button_height)),
+        UIButton(
+            ACTION_TOGGLE_NIGHT,
+            "Day" if night_mode else "Night",
+            pygame.Rect(x + half_width + button_gap, y, half_width, button_height),
+            selected=night_mode,
+        ),
+        UIButton(
+            ACTION_MAIN_MENU,
+            "Main Menu",
+            pygame.Rect(x, y + button_height + button_gap, width, button_height),
+        ),
+    ]
 
 
 def _algorithm_buttons(
@@ -257,6 +507,7 @@ def _control_buttons(
     placement_plan: VehiclePlan,
     simulation_speed: float,
     step_mode_enabled: bool,
+    night_mode: bool,
     button_height: int,
     button_gap: int,
 ) -> list[UIButton]:
@@ -349,9 +600,15 @@ def _control_buttons(
             ),
         ),
         UIButton(
+            ACTION_TOGGLE_NIGHT,
+            "Day Mode" if night_mode else "Night Mode",
+            pygame.Rect(x, y + (button_height + button_gap) * 7, width, button_height),
+            selected=night_mode,
+        ),
+        UIButton(
             ACTION_MAIN_MENU,
             "Main Menu",
-            pygame.Rect(x, y + (button_height + button_gap) * 7, width, button_height),
+            pygame.Rect(x, y + (button_height + button_gap) * 8, width, button_height),
         ),
     ]
 
@@ -377,11 +634,13 @@ def _draw_title(
     title_rect = pygame.Rect(x, y, width, title_height)
     pygame.draw.rect(screen, (38, 44, 38), title_rect)
     pygame.draw.rect(screen, (164, 133, 82), title_rect, 2)
-    title = font.render("Smart Parking", True, (252, 236, 178))
-    subtitle = font_small.render("2D Simulation", True, (190, 176, 132))
-    screen.blit(title, (title_rect.left + 12, title_rect.top + (6 if compact else 8)))
-    if not compact:
-        screen.blit(subtitle, (title_rect.left + 12, title_rect.top + 28))
+    font_size = 16 if compact else 20
+    title_font = _TITLE_FONTS.get(font_size)
+    if title_font is None:
+        title_font = pygame.font.SysFont("monospace", font_size, bold=True)
+        _TITLE_FONTS[font_size] = title_font
+    title = title_font.render("Smart Parking Simulator", True, (252, 236, 178))
+    screen.blit(title, title.get_rect(center=title_rect.center))
     return title_height
 
 
@@ -488,6 +747,116 @@ def _draw_metrics_row(
             column_right = table_rect.left + int(table_rect.width * offset)
             text_x = column_right - text.get_width()
         screen.blit(text, (text_x, y + 5))
+
+
+def _draw_algorithm_charts(
+    screen: pygame.Surface,
+    font: pygame.font.Font,
+    metrics_by_algorithm: dict[str, AlgorithmMetrics],
+    current_algorithm: str | AlgorithmType,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+) -> int:
+    chart_rect = pygame.Rect(x, y, width, height)
+    pygame.draw.rect(screen, (22, 26, 30), chart_rect)
+    pygame.draw.rect(screen, (94, 105, 80), chart_rect, 2)
+
+    gap = 10
+    panel_width = (width - gap - 12) // 2
+    left = pygame.Rect(x + 6, y + 6, panel_width, height - 44)
+    right = pygame.Rect(left.right + gap, y + 6, panel_width, height - 12)
+    right.height = left.height
+    runtime_values = []
+    memory_values = []
+    for _label, algorithm in ALGORITHM_BUTTONS:
+        metrics = metrics_by_algorithm.get(algorithm.value.lower())
+        runtime_values.append(None if metrics is None else metrics.avg_time_ms)
+        memory_values.append(None if metrics is None else metrics.last_memory_kb)
+
+    selected_label = algorithm_label(current_algorithm)
+    _draw_vertical_bar_chart(
+        screen,
+        font,
+        left,
+        "AVG MS (LOWER)",
+        runtime_values,
+        selected_label,
+        _format_ms,
+    )
+    _draw_vertical_bar_chart(
+        screen,
+        font,
+        right,
+        "LAST KB (LOWER)",
+        memory_values,
+        selected_label,
+        _format_kb,
+    )
+    note_lines = [
+        "AVG MS: average pathfinding time.",
+        "LAST KB: latest memory use. Lower bars are better.",
+    ]
+    note_y = chart_rect.bottom - 32
+    for index, line in enumerate(note_lines):
+        note = font.render(line, True, (154, 162, 146))
+        screen.blit(note, (chart_rect.left + 8, note_y + index * 13))
+    return y + height + 8
+
+
+def _draw_vertical_bar_chart(
+    screen: pygame.Surface,
+    font: pygame.font.Font,
+    rect: pygame.Rect,
+    title: str,
+    values: list[float | None],
+    selected_label: str,
+    formatter,
+) -> None:
+    pygame.draw.rect(screen, (27, 31, 35), rect)
+    title_surface = font.render(title, True, (160, 175, 145))
+    screen.blit(title_surface, (rect.left + 6, rect.top + 5))
+
+    plot = pygame.Rect(rect.left + 6, rect.top + 28, rect.width - 12, rect.height - 52)
+    pygame.draw.line(screen, (76, 84, 72), plot.bottomleft, plot.bottomright, 1)
+    numeric_values = [value for value in values if value is not None]
+    maximum = max(numeric_values, default=1.0)
+    bar_gap = 5
+    bar_width = max(8, (plot.width - bar_gap * 5) // 4)
+    colors = [
+        (89, 171, 116),
+        (218, 164, 82),
+        (86, 154, 207),
+        (202, 105, 112),
+    ]
+
+    for index, ((label, _algorithm), value) in enumerate(
+        zip(ALGORITHM_BUTTONS, values, strict=True)
+    ):
+        bar_x = plot.left + bar_gap + index * (bar_width + bar_gap)
+        if value is not None and maximum > 0:
+            bar_height = max(2, int((plot.height - 18) * value / maximum))
+            bar = pygame.Rect(bar_x, plot.bottom - bar_height, bar_width, bar_height)
+            pygame.draw.rect(screen, colors[index], bar)
+            value_text = font.render(formatter(value), True, (224, 226, 207))
+            value_x = bar.centerx - value_text.get_width() // 2
+            screen.blit(value_text, (value_x, max(plot.top, bar.top - 14)))
+        else:
+            empty = pygame.Rect(bar_x, plot.bottom - 3, bar_width, 3)
+            pygame.draw.rect(screen, (62, 68, 63), empty)
+
+        compact_label = _compact_algorithm_label(label)
+        label_color = (
+            (252, 236, 178)
+            if label == selected_label
+            else (174, 182, 163)
+        )
+        label_surface = font.render(compact_label, True, label_color)
+        screen.blit(
+            label_surface,
+            (bar_x + (bar_width - label_surface.get_width()) // 2, plot.bottom + 4),
+        )
 
 
 def _compact_algorithm_label(label: str) -> str:

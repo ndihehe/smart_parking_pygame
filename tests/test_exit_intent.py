@@ -174,6 +174,49 @@ class TestExitIntent(unittest.TestCase):
         self.assertEqual(outer.status, VehicleStatus.PARKED)
         self.assertEqual(outer.assigned_slot, inner_slot)
 
+    def test_tandem_inner_car_exits_when_outer_is_parked_ahead(self) -> None:
+        gc = GameController(MAP_PATH)
+        state = gc.map_manager.get_state()
+        inner_slot, outer_slot = next(iter(state.car_inner_to_outer.items()))
+        inner = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, inner_slot)
+        outer = gc.vehicle_manager.spawn_vehicle(VehicleType.CAR, outer_slot)
+        gc.parking_manager.occupy_slot(inner, inner_slot, state)
+        gc.parking_manager.occupy_slot(outer, outer_slot, state)
+        inner.status = VehicleStatus.PARKED
+        outer.status = VehicleStatus.PARKED
+
+        gc.start_exit(inner.id)
+
+        self.assertIn(inner.id, gc._tandem_exit_jobs)
+        for _ in range(120):
+            gc.update(0.3)
+            if gc.vehicle_manager.get_vehicle(inner.id) is None:
+                break
+
+        self.assertIsNone(gc.vehicle_manager.get_vehicle(inner.id))
+        self.assertEqual(outer.status, VehicleStatus.PARKED)
+        self.assertEqual(outer.assigned_slot, inner_slot)
+
+    def test_guard_sends_violating_exiting_vehicle_to_exit_not_parking(self) -> None:
+        gc = GameController(APP_MAP_PATH)
+        vehicle = gc.spawn_vehicle(VehicleType.CAR)
+        self.assertIsNotNone(vehicle)
+        gc.start_exit(vehicle.id)
+        gc.set_manual(vehicle.id)
+        vehicle.position = (8, 5)
+
+        self.assertEqual(gc.confirm_parking(vehicle.id), "ILLEGAL_ROAD")
+        guard = next(guard for guard in gc.guards if guard.task == "VIOLATION")
+        guard.position = vehicle.position
+        guard.path = []
+        gc._handle_guard_reached_violation(guard)
+
+        self.assertIsNone(vehicle.assigned_slot)
+        self.assertEqual(vehicle.status, VehicleStatus.MOVING)
+        self.assertEqual(vehicle.wait_reason, WaitReason.EXITING)
+        self.assertTrue(vehicle.path)
+        self.assertIn(vehicle.path[-1], gc.map_manager.get_state().exit_gates)
+
 
 if __name__ == "__main__":
     unittest.main()
