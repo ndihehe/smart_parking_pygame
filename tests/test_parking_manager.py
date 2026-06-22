@@ -1,7 +1,7 @@
 ﻿import unittest
 
 from core.game_controller import GameController
-from models.enums import CellType, VehicleStatus, VehicleType
+from models.enums import CellType, VehicleStatus, VehicleType, WaitReason
 from utils.logger import Logger
 
 
@@ -109,6 +109,20 @@ class TestParkingManager(unittest.TestCase):
         self.assertFalse(
             gc.parking_manager._tandem_access_available(newcomer, inner_slot, state)
         )
+
+    def test_wrong_type_parking_is_marked_as_active_block(self) -> None:
+        gc = GameController(MAP_PATH)
+        vehicle = gc.spawn_vehicle(VehicleType.MOTORBIKE)
+        gc.set_manual(vehicle.id)
+        vehicle.position = gc.map_manager.get_state().car_slots[0]
+
+        self.assertEqual(gc.confirm_parking(vehicle.id), "WRONG_TYPE")
+        self.assertEqual(vehicle.status, VehicleStatus.VIOLATION)
+        self.assertEqual(
+            vehicle.wait_reason,
+            WaitReason.PARKING_VIOLATION_WRONG_TYPE,
+        )
+        self.assertIn(vehicle.position, gc.map_manager.get_state().dynamic_blocks)
 
 
 if __name__ == "__main__":

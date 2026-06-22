@@ -1,6 +1,7 @@
 import copy
 import random
 
+from ai.pathfinding.guard_path import find_guard_path
 from ai.pathfinding.router import find_path, normalize_algorithm_name
 from config import (
     AUTO_SPAWN_INTERVAL,
@@ -365,14 +366,16 @@ class GameController:
             Logger.log(
                 f"[GameController] Parking violation detected for Vehicle #{vehicle.id}: {result}"
             )
-            if result in ("ILLEGAL_ROAD", "BLOCKING_INTERSECTION"):
-                self.map_manager.add_dynamic_block(vehicle.position)
-                self.traffic_controller.handle_obstacle(
-                    vehicle.position,
-                    self.vehicle_manager.get_all_vehicles(),
-                    self.map_manager,
-                    self.current_algorithm,
-                )
+            # A vehicle in the wrong slot blocks that slot just as an illegally
+            # parked vehicle blocks a road cell. Keep the violation visible and
+            # prevent other routes from crossing it until the guard arrives.
+            self.map_manager.add_dynamic_block(vehicle.position)
+            self.traffic_controller.handle_obstacle(
+                vehicle.position,
+                self.vehicle_manager.get_all_vehicles(),
+                self.map_manager,
+                self.current_algorithm,
+            )
             self._dispatch_violation_guard(vehicle)
         else:
             Logger.log(
@@ -562,27 +565,47 @@ class GameController:
         if vehicle.status == VehicleStatus.PARKED and vehicle.assigned_slot is not None:
             return
 
-        slot = self.parking_manager.find_slot(vehicle, self.map_manager.get_state())
-        if slot is None:
-            self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
-            self.vehicle_manager.set_wait_reason(vehicle.id, WaitReason.NO_SLOT)
-            return
+        map_state = self.map_manager.get_state()
+        unreachable_slots: set[tuple[int, int]] = set()
+        found_available_slot = False
 
-        self.parking_manager.assign_slot(vehicle, slot, self.map_manager.get_state())
-        path = self._path_to_parking_slot(vehicle.position, slot, vehicle.id)
-        if path:
-            self.vehicle_manager.set_path(vehicle.id, path)
-            self.vehicle_manager.set_status(vehicle.id, VehicleStatus.MOVING)
-            Logger.log(
-                f"[GameController] Vehicle #{vehicle.id} path found via "
-                f"{self.current_algorithm.upper()}, "
-                f"length={len(path)}"
+        while True:
+            slot = self.parking_manager.find_slot(
+                vehicle,
+                map_state,
+                unreachable_slots,
             )
-        else:
-            self.parking_manager.release_vehicle_slot(vehicle, self.map_manager.get_state())
-            self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
-            self.vehicle_manager.set_wait_reason(vehicle.id, WaitReason.NO_PATH)
-            Logger.log(f"[GameController] Vehicle #{vehicle.id} no path found")
+            if slot is None:
+                self.vehicle_manager.set_status(vehicle.id, VehicleStatus.WAITING)
+                self.vehicle_manager.set_wait_reason(
+                    vehicle.id,
+                    WaitReason.NO_PATH if found_available_slot else WaitReason.NO_SLOT,
+                )
+                if found_available_slot:
+                    Logger.log(
+                        f"[GameController] Vehicle #{vehicle.id} no reachable slot found"
+                    )
+                return
+
+            found_available_slot = True
+            self.parking_manager.assign_slot(vehicle, slot, map_state)
+            path = self._path_to_parking_slot(vehicle.position, slot, vehicle.id)
+            if path:
+                self.vehicle_manager.set_path(vehicle.id, path)
+                self.vehicle_manager.set_status(vehicle.id, VehicleStatus.MOVING)
+                Logger.log(
+                    f"[GameController] Vehicle #{vehicle.id} path found via "
+                    f"{self.current_algorithm.upper()}, "
+                    f"length={len(path)}"
+                )
+                return
+
+            self.parking_manager.release_vehicle_slot(vehicle, map_state)
+            unreachable_slots.add(slot)
+            Logger.log(
+                f"[GameController] Vehicle #{vehicle.id} cannot reach slot {slot}; "
+                "trying another slot"
+            )
 
     def _reroute_vehicle(self, vehicle: Vehicle) -> None:
         if self._is_exiting_vehicle(vehicle):
@@ -1045,27 +1068,44 @@ class GameController:
         slot: tuple[int, int],
         vehicle_id: int,
     ) -> list[tuple[int, int]]:
-        slot_type = self.map_manager.get_state().parking_slots[slot].slot_type
+        map_state = self.map_manager.get_state()
+        blocked_positions = self._occupied_positions(vehicle_id)
+        start_prefix: list[tuple[int, int]] = []
+
+        # A wrongly parked vehicle may be inside a tandem row of the other
+        # vehicle type. Let the guard escort it through that row's outer slot
+        # before normal vehicle routing resumes.
+        start_slot = map_state.parking_slots.get(start)
+        if start_slot is not None:
+            start_outer = self._tandem_inner_to_outer(start_slot.slot_type).get(start)
+            if start_outer is not None:
+                if start_outer in blocked_positions:
+                    return []
+                start_prefix = [start_outer]
+                start = start_outer
+
+        slot_type = map_state.parking_slots[slot].slot_type
         outer_slot = self._tandem_inner_to_outer(slot_type).get(slot)
         if outer_slot is None:
-            return find_path(
+            path = find_path(
                 self.current_algorithm,
                 start,
                 slot,
                 self.map_manager,
-                self._occupied_positions(vehicle_id),
+                blocked_positions,
             )
+            return start_prefix + path if path else []
 
         path_to_outer = find_path(
             self.current_algorithm,
             start,
             outer_slot,
             self.map_manager,
-            self._occupied_positions(vehicle_id),
+            blocked_positions,
         )
         if not path_to_outer:
             return []
-        return path_to_outer + [slot]
+        return start_prefix + path_to_outer + [slot]
 
     def _path_from_parking_position_to_goal(
         self,
@@ -1164,8 +1204,7 @@ class GameController:
 
     def _dispatch_violation_guard(self, vehicle: Vehicle) -> None:
         guard = self._get_available_guard()
-        path = find_path(
-            self.current_algorithm,
+        path = find_guard_path(
             guard.position,
             vehicle.position,
             self.map_manager,
@@ -1285,8 +1324,7 @@ class GameController:
         guard.target_vehicle_id = None
         guard.target_position = guard.home_position
         guard.task = "RETURNING"
-        guard.path = find_path(
-            self.current_algorithm,
+        guard.path = find_guard_path(
             guard.position,
             guard.home_position,
             self.map_manager,

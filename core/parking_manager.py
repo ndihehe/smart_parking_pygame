@@ -6,9 +6,15 @@ from utils.logger import Logger
 
 
 class ParkingManager:
-    def find_slot(self, vehicle: Vehicle, map_state: MapState) -> tuple[int, int] | None:
+    def find_slot(
+        self,
+        vehicle: Vehicle,
+        map_state: MapState,
+        excluded_positions: set[tuple[int, int]] | None = None,
+    ) -> tuple[int, int] | None:
         best_position: tuple[int, int] | None = None
         best_score: float | None = None
+        excluded_positions = excluded_positions or set()
 
         slot_positions = (
             map_state.car_slots
@@ -17,6 +23,8 @@ class ParkingManager:
         )
 
         for position in slot_positions:
+            if position in excluded_positions:
+                continue
             slot = map_state.parking_slots[position]
             if slot.is_occupied:
                 continue
